@@ -1,0 +1,17 @@
+# Otomatik TLS (Let's Encrypt). ARTCI_DOMAIN'in A kaydı sunucuyu göstermeli.
+{$ARTCI_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# /metrics yalnızca iç ağda; api'nin metrik portu zaten ayrı ama yine de kapalı tutulur.
+	respond /metrics 404
+
+	# WebSocket dahil her şey api'ye.
+	reverse_proxy api:8080
+}

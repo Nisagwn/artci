@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+deploy
+docs
+*.md
+!go.mod
+.env
+.env.*

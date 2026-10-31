@@ -84,6 +84,7 @@ func (s *EMSCStream) Run(ctx context.Context) {
 		}
 		failures = 0
 		metrics.SourceUp.WithLabelValues(normalize.SourceEMSC).Set(1)
+		metrics.SourceLastSuccess.WithLabelValues(normalize.SourceEMSC).SetToCurrentTime()
 		slog.Info("emsc: bağlandı", "gap_fill_since", since.UTC())
 
 		err = s.serve(ctx, conn, since)
@@ -181,6 +182,9 @@ func (s *EMSCStream) keepAlive(ctx context.Context, conn *websocket.Conn, cancel
 				cancel(errors.Join(errors.New("ping yanıtsız"), err))
 				return
 			}
+			// Sakin dönemde mesaj gelmez; canlı bağlantı da "kaynak sağlıklı"
+			// demektir. "Kaynağa 15 dk ulaşılamadı" alarmı buna dayanır.
+			metrics.SourceLastSuccess.WithLabelValues(normalize.SourceEMSC).SetToCurrentTime()
 		}
 	}
 }
