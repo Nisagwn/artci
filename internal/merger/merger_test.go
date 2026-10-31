@@ -516,3 +516,31 @@ func TestPublishedSequence(t *testing.T) {
 	}
 }
 
+// Yalnızca kaynak listesi değişen bağlama da yeni sürümdür (docs/MATCHING.md
+// §6: "kaynak listesi dahil"). AFAD önce gelirse sonraki kaynaklar gösterilen
+// değerleri değiştirmez; ama haritadaki "Kaynaklar" ve özetteki "Veriler"
+// değişir, bu yüzden olay yayınlanmalıdır. (Gerileme: önceki hâl bağlamadan
+// sonra okunuyordu ve yeni kaynağı zaten içeriyordu.)
+func TestAttachLowerPrioritySource_BumpsVersionAndPublishes(t *testing.T) {
+	afad, kand, emsc := loadSindirgi(t)
+	h := newHarness(t)
+	h.handle(afad)
+	for i, r := range []normalize.Report{emsc, kand} {
+		if d := h.handle(r); d != DecisionAttached {
+			t.Fatalf("karar: %s", d)
+		}
+		ev := h.onlyEvent()
+		if ev.Version != i+2 {
+			t.Fatalf("%s bağlandıktan sonra sürüm %d olmalı: %+v", r.Source, i+2, ev)
+		}
+		if n := len(h.pub.got); n != i+2 {
+			t.Fatalf("%s bağlanınca olay yayınlanmalı: %d yayın", r.Source, n)
+		}
+		if ev.Magnitude != afad.Magnitude {
+			t.Fatalf("gösterilen değer AFAD'da kalmalı: %+v", ev)
+		}
+	}
+	if last := h.pub.got[len(h.pub.got)-1]; !slices.Equal(last.Event.Sources, []string{"afad", "kandilli", "emsc"}) {
+		t.Fatalf("son yayının kaynakları: %v", last.Event.Sources)
+	}
+}
