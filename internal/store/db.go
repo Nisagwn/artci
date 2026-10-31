@@ -1,11 +1,12 @@
 // Package store, PostgreSQL + PostGIS erişimidir.
 //
 // Dosya düzeni (her servis kendi dosyasına sahiptir):
-//   db.go            bağlantı + migration
-//   reports.go       merger: rapor upsert, olay okuma/yazma
-//   subscriptions.go notifier: abonelik ve bildirim günlüğü
-//   summaries.go     summarizer: özetler ve LLM harcaması
-//   query.go         api: okuma sorguları
+//
+//	db.go            bağlantı + migration
+//	reports.go       merger: rapor upsert, olay okuma/yazma
+//	subscriptions.go notifier: abonelik ve bildirim günlüğü
+//	summaries.go     summarizer: özetler ve LLM harcaması
+//	query.go         api: okuma sorguları
 package store
 
 import (
@@ -38,10 +39,25 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 // Close havuzu kapatır.
 func (s *Store) Close() { s.Pool.Close() }
 
+// migrateLockKey: tüm servislerin paylaştığı advisory lock anahtarı.
+const migrateLockKey = 74_2026_31
+
 // Migrate, verilen dosya sistemindeki *.sql dosyalarını ad sırasıyla uygular.
 // Uygulananlar schema_migrations tablosunda tutulur; her dosya bir kez çalışır.
+// Birden fazla servis aynı anda açılabildiği için işlem pg_advisory_lock ile
+// sıraya sokulur; kilit oturuma bağlı olduğundan tek bir bağlantı kullanılır.
 func (s *Store) Migrate(ctx context.Context, fsys fs.FS) error {
-	if _, err := s.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+	conn, err := s.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
+		return fmt.Errorf("migration kilidi: %w", err)
+	}
+	defer conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLockKey)
+
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
@@ -52,7 +68,7 @@ func (s *Store) Migrate(ctx context.Context, fsys fs.FS) error {
 	sort.Strings(names)
 	for _, name := range names {
 		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, name).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, name).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -62,7 +78,7 @@ func (s *Store) Migrate(ctx context.Context, fsys fs.FS) error {
 		if err != nil {
 			return err
 		}
-		tx, err := s.Pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}
