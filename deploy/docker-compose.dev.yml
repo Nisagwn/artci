@@ -1,0 +1,24 @@
+# Yerel geliştirme: yalnızca altyapı (PostgreSQL + PostGIS, Redis).
+# Servisler `go run ./cmd/...` ile çalıştırılır.
+#   docker compose -f deploy/docker-compose.dev.yml up -d
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: artci
+      POSTGRES_PASSWORD: artci
+      POSTGRES_DB: artci
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U artci"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+volumes:
+  pgdata:
+  redisdata:
