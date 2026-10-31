@@ -2,7 +2,7 @@
 
 > Türkiye'deki depremleri birden fazla kaynaktan canlı toplayan, aynı depremi tek kayda indiren, etkilenen kullanıcılara bildirim gönderen ve yapay zekâ ile doğrulanmış, sade Türkçe özetler üreten bir backend sistemi.
 
-**Durum:** Planlama · **Hedef süre:** 3 hafta (günde 1–2 saat) · **Yazar:** Nisa Güven
+**Durum:** Kod tamam (21 günün tümü); canlı kurulum ve gerçek veriyle doğrulama bekliyor, bkz. README · **Hedef süre:** 3 hafta (günde 1–2 saat) · **Yazar:** Nisa Güven
 
 > ⚠️ Artçı bir eğitim ve portföy projesidir; resmî bir uyarı sistemi değildir. Resmî bilgi için AFAD'ı takip edin.
 
