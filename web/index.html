@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artçı · Canlı Deprem Haritası</title>
+  <meta name="description" content="Türkiye'deki son depremlerin AFAD, Kandilli ve EMSC verileriyle birleştirilmiş canlı haritası. Eğitim projesidir.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#list">Deprem listesine geç</a>
+
+  <div class="notice" role="note">
+    <strong>Artçı bir eğitim projesidir; resmî bir uyarı sistemi değildir.</strong>
+    Resmî bilgi için <a href="https://deprem.afad.gov.tr/" rel="noopener" target="_blank">AFAD</a>'ı takip edin.
+  </div>
+
+  <header class="bar">
+    <h1>Artçı <span class="sub">son 24 saatin depremleri</span></h1>
+    <p class="status" id="status" role="status" data-state="connecting">
+      <span class="dot" aria-hidden="true"></span><span id="status-text">Bağlanıyor…</span>
+    </p>
+  </header>
+
+  <main class="layout">
+    <div id="map" class="map" role="region" aria-label="Deprem haritası"></div>
+
+    <aside class="panel" aria-labelledby="list-title">
+      <div class="panel-head">
+        <h2 id="list-title">Son depremler <span class="count" id="count"></span></h2>
+        <label class="filter">
+          Büyüklük
+          <select id="min-mag">
+            <option value="0">Tümü</option>
+            <option value="2">2,0 ve üzeri</option>
+            <option value="3">3,0 ve üzeri</option>
+            <option value="4">4,0 ve üzeri</option>
+            <option value="5">5,0 ve üzeri</option>
+          </select>
+        </label>
+      </div>
+      <ul id="list" class="list" tabindex="-1" aria-live="polite" aria-relevant="additions"></ul>
+      <p id="empty" class="empty" hidden>Bu filtreyle son 24 saatte deprem yok.</p>
+      <p class="legend" aria-hidden="true">
+        <span class="sw m0"></span>&lt;3 <span class="sw m3"></span>3–4
+        <span class="sw m4"></span>4–5 <span class="sw m5"></span>5+
+      </p>
+      <p class="credits">
+        Veri: AFAD, Kandilli Rasathanesi, EMSC · Saatler Türkiye saatiyle.
+      </p>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
