@@ -1,0 +1,41 @@
+[
+  {
+    "source": "afad",
+    "source_event_id": "656321",
+    "origin_time": "2026-10-30T12:04:31Z",
+    "lat": 39.21,
+    "lon": 28.15,
+    "depth_km": 10.2,
+    "magnitude": 4.1,
+    "mag_type": "Mw",
+    "place_name": "Sındırgı (Balıkesir)",
+    "raw": {"not": "Plan §1 temsili kayit"},
+    "received_at": "2026-10-30T12:06:05Z"
+  },
+  {
+    "source": "kandilli",
+    "source_event_id": "20261030120430_39.1900_28.1700",
+    "origin_time": "2026-10-30T12:04:30Z",
+    "lat": 39.19,
+    "lon": 28.17,
+    "depth_km": 7.0,
+    "magnitude": 4.3,
+    "mag_type": "ML",
+    "place_name": "SINDIRGI (BALIKESIR)",
+    "raw": {"not": "Plan §1 temsili kayit"},
+    "received_at": "2026-10-30T12:05:20Z"
+  },
+  {
+    "source": "emsc",
+    "source_event_id": "20261030_0000123",
+    "origin_time": "2026-10-30T12:04:32Z",
+    "lat": 39.23,
+    "lon": 28.12,
+    "depth_km": 10.0,
+    "magnitude": 4.2,
+    "mag_type": "M",
+    "place_name": "WESTERN TURKEY",
+    "raw": {"not": "Plan §1 temsili kayit"},
+    "received_at": "2026-10-30T12:05:02Z"
+  }
+]
