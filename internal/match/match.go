@@ -36,8 +36,9 @@ type Config struct {
 	SameSourceMaxDMag float64       // 0,5
 }
 
-// DefaultConfig, Plan §8 eşikleridir.
-func DefaultConfig() Config {
+// PlanConfig, Plan §8'deki başlangıç tahminleridir. Formül testleri bu
+// değerlerle yazılmıştır; üretimde DefaultConfig kullanılır.
+func PlanConfig() Config {
 	return Config{
 		TimeWindow:        60 * time.Second,
 		MaxDistanceKm:     100,
@@ -50,6 +51,20 @@ func DefaultConfig() Config {
 		SameSourceMaxKm:   10,
 		SameSourceMaxDMag: 0.5,
 	}
+}
+
+// DefaultConfig, replay ile ayarlanmış eşiklerdir (bkz. docs/MATCHING.md
+// "Eşiklerin ayarı"). Plan §8'in 60 sn / 100 km penceresi yoğun bir artçı
+// dizisinde farklı depremleri birleştiriyordu (sentetik dizide F1 0,85);
+// 10 sn / 50 km / 0,5 iki gürültü düzeyinde de ~0,95 veriyor.
+// Ayar sentetik veriyle yapıldı; gerçek katalogla yeniden doğrulanmalı.
+func DefaultConfig() Config {
+	c := PlanConfig()
+	c.TimeWindow = 10 * time.Second
+	c.MaxDistanceKm = 50
+	c.MinScore = 0.5
+	c.SameSourceMaxDt = 2 * time.Second
+	return c
 }
 
 // Member, aday olaya zaten bağlı bir raporun eşleştirme için gereken özetidir.
