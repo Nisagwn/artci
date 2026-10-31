@@ -32,6 +32,9 @@ type Notifier struct {
 	Log    *slog.Logger
 }
 
+// DefaultMaxAge: varsayılan bildirim yaş sınırı (bkz. Notifier.MaxAge).
+const DefaultMaxAge = time.Hour
+
 type pendingSend struct {
 	sub  store.Subscription
 	kind string
