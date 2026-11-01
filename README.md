@@ -290,7 +290,9 @@ go run ./cmd/replay run -in /tmp/sindirgi.jsonl -speed 10 -cleanup
 
 Gerçek dizi kataloğu repoda: [`testdata/replay/sindirgi-isc-2025-08.jsonl.gz`](testdata/replay/sindirgi-isc-2025-08.jsonl.gz)
 (`go run ./cmd/replay isc` ile yeniden üretilir) ve her `go test`'te
-oynatılır; doğruluk F1 0,98'in altına düşerse test kırılır.
+oynatılır; doğruluk F1 0,98'in altına düşerse test kırılır. Aynı katalog
+gerçek hattan da geçirilebilir (`make replay-real`, merger + PostGIS + Redis
+çalışıyor olmalı): ölçülen F1 0,9857, bellek içi testle aynı.
 
 Gerçek bir afetin verisini kullanırken bunu saygıyla ve yalnızca mühendislik
 amacıyla yapıyorum. Kullanılan yalnızca kurumların yayımladığı deprem

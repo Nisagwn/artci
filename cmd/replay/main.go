@@ -4,6 +4,7 @@
 //	replay gen -out testdata/replay/sindirgi-sentetik.jsonl      # sentetik dizi üret
 //	replay run -in testdata/replay/sindirgi-sentetik.jsonl -speed 10
 //	replay run -in ... -speed 0                                  # olabildiğince hızlı (iş hacmi)
+//	replay run -in testdata/replay/sindirgi-isc-2025-08.jsonl.gz -speed 0 # gerçek dizi
 //	replay isc -out testdata/replay/sindirgi-isc-2025-08.jsonl.gz # ISC bülteninden gerçek dizi
 //
 // run, raporları reports.raw akışına yazar; merger'ın çalışıyor olması gerekir.
@@ -203,7 +204,7 @@ type result struct {
 
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	in := fs.String("in", "", "katalog (JSONL)")
+	in := fs.String("in", "", "katalog (JSONL; .gz uzantılıysa gzip)")
 	speed := fs.Float64("speed", 10, "hızlandırma katsayısı; 0 = beklemeden")
 	limit := fs.Int("limit", 0, "yalnızca ilk N rapor (0 = hepsi)")
 	force := fs.Bool("force", false, "notifier grubu olsa da çalış")
@@ -218,7 +219,16 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := replay.ReadCatalog(f)
+	var r io.Reader = f
+	if strings.HasSuffix(*in, ".gz") {
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("%s: %w", *in, err)
+		}
+		r = zr
+	}
+	entries, err := replay.ReadCatalog(r)
 	f.Close()
 	if err != nil {
 		return err
