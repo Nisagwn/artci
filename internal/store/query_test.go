@@ -43,7 +43,7 @@ func TestQueriesIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	t.Cleanup(s.Close) // defer değil: aşağıdaki temizlikler havuz kapanmadan çalışmalı
 	if err := s.Migrate(ctx, migrations.FS); err != nil {
 		t.Fatal(err)
 	}

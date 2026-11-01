@@ -1,0 +1,8 @@
+[
+  {"rms":"0.42","eventID":"702311","location":"Sındırgı (Balıkesir)","latitude":"39.2100","longitude":"28.1500","depth":"7.02","type":"ML","magnitude":"4.1","country":"Türkiye","province":"Balıkesir","district":"Sındırgı","neighborhood":"","date":"2026-10-30T12:04:31","isEventUpdate":false,"lastUpdateDate":null},
+  {"rms":"0.31","eventID":"702305","location":"Ege Denizi","latitude":"38.4512","longitude":"26.1023","depth":"10.4","type":"MW","magnitude":"3.2","country":"","province":"","district":"","neighborhood":"","date":"2026-10-30T11:58:02","isEventUpdate":true,"lastUpdateDate":"2026-10-30T12:01:00"},
+  {"rms":"0.50","eventID":"702301","location":"","latitude":"38.0001","longitude":"38.3000","depth":"5","type":"ML","magnitude":"2.4","country":"Türkiye","province":"Malatya","district":"Yeşilyurt","neighborhood":"","date":"2026-10-30T11:40:10","isEventUpdate":false,"lastUpdateDate":null},
+  {"rms":"0.20","eventID":"702299","location":"Bozuk","latitude":"","longitude":"28.0","depth":"5","type":"ML","magnitude":"2.0","date":"2026-10-30T11:30:00"},
+  {"rms":"0.20","eventID":"702298","location":"Bozuk tarih","latitude":"39.0","longitude":"28.0","depth":"5","type":"ML","magnitude":"2.0","date":"30/10/2026"},
+  {"rms":"0.20","eventID":"702297","location":"Uçuk büyüklük","latitude":"39.0","longitude":"28.0","depth":"5","type":"ML","magnitude":"42","date":"2026-10-30T11:20:00"}
+]

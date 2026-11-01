@@ -24,7 +24,7 @@ func rep(src, id string, dtSec, lat, lon, mag float64) normalize.Report {
 func candOf(id string, rs ...normalize.Report) Candidate { return CandidateOf(id, rs) }
 
 func TestScore(t *testing.T) {
-	c := DefaultConfig()
+	c := PlanConfig() // formül Plan §8 değerleriyle sınanır
 	base := rep("afad", "a1", 0, 39.21, 28.15, 4.1)
 	cand := candOf("E1", base)
 
@@ -53,7 +53,7 @@ func TestScore(t *testing.T) {
 
 // Plan §1'deki temsilî Sındırgı kayıtları birbirine bağlanmalı.
 func TestDecide_Plan1Example(t *testing.T) {
-	c := DefaultConfig()
+	c := PlanConfig() // formül Plan §8 değerleriyle sınanır
 	afad := rep("afad", "a1", 0, 39.21, 28.15, 4.1)
 	kand := rep("kandilli", "k1", -1, 39.19, 28.17, 4.3)
 	emsc := rep("emsc", "e1", 1, 39.23, 28.12, 4.2)
@@ -71,7 +71,7 @@ func TestDecide_Plan1Example(t *testing.T) {
 }
 
 func TestDecide(t *testing.T) {
-	c := DefaultConfig()
+	c := PlanConfig() // formül Plan §8 değerleriyle sınanır
 	a := rep("afad", "a1", 0, 39.21, 28.15, 4.1)
 
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestDecide(t *testing.T) {
 }
 
 func TestDecide_PicksBestAndIsOrderIndependent(t *testing.T) {
-	c := DefaultConfig()
+	c := PlanConfig() // formül Plan §8 değerleriyle sınanır
 	r := rep("emsc", "e1", 0, 39.21, 28.15, 4.1)
 	near := candOf("B", rep("afad", "a1", 2, 39.21, 28.15, 4.1))
 	far := candOf("A", rep("afad", "a2", 30, 39.40, 28.15, 4.0))

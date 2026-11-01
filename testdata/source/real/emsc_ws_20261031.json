@@ -1,0 +1,27 @@
+{"action":"create","data":{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      36.9010,
+      37.0828,
+      -6.9
+    ]
+  },
+  "id": "20261031_0000265",
+  "properties": {
+    "source_id": "2083501",
+    "source_catalog": "EMSC-RTS",
+    "lastupdate": "2026-10-31T20:53:08.695103Z",
+    "time": "2026-10-31T20:25:59.0Z",
+    "flynn_region": "CENTRAL TURKEY",
+    "lat": 37.0828,
+    "lon": 36.9010,
+    "depth": 6.9,
+    "evtype": "ke",
+    "auth": "AFAD",
+    "mag": 1.5,
+    "magtype": "ml",
+    "unid": "20261031_0000265"
+  }
+}}

@@ -1,0 +1,47 @@
+# Plan §12 alarmları. Bildirim kanalı (Alertmanager) MVP'de yok; alarmlar
+# Prometheus arayüzünde (/alerts) ve Grafana panosunda görünür.
+groups:
+  - name: artci
+    rules:
+      # Plan: "Bir kaynaktan 15 dakikadır rapor gelmiyor". Sakin saatlerde
+      # deprem olmaması normal olduğu için rapor sayısına değil, kaynağa son
+      # başarılı erişime bakılır (polling turu ya da EMSC ping'i).
+      - alert: KaynakErisilemiyor
+        expr: time() - artci_source_last_success_timestamp_seconds > 900
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.source }} kaynağına 15 dakikadır ulaşılamıyor"
+
+      - alert: ToplayiciKapali
+        expr: up{service=~"ingest-.*"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.service }} süreci 5 dakikadır yanıt vermiyor"
+
+      - alert: DLQArtisi
+        expr: sum by (source) (increase(artci_dlq_messages_total[1h])) > 10
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.source }}: son 1 saatte {{ $value | humanize }} kayıt DLQ'ya gitti (biçim değişmiş olabilir)"
+
+      - alert: BildirimGecikmesi
+        expr: histogram_quantile(0.95, sum by (le) (rate(artci_notify_latency_seconds_bucket[30m]))) > 30
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Bildirim gecikmesi p95 {{ $value | humanizeDuration }} (> 30 sn)"
+
+      # Pay: reddedilen LLM özeti; payda: LLM'in denendiği tüm özetler.
+      # Az örnekte gürültü olmasın diye en az 5 deneme şartı var.
+      - alert: LLMRetOrani
+        expr: |
+          (
+            sum(increase(artci_summary_results_total{result="rejected"}[6h]))
+            / sum(increase(artci_summary_results_total{result=~"llm_ok|rejected"}[6h]))
+          ) > 0.2
+          and sum(increase(artci_summary_results_total{result=~"llm_ok|rejected"}[6h])) >= 5
+        labels: { severity: warning }
+        annotations:
+          summary: "LLM özetlerinin {{ $value | humanizePercentage }} kadarı reddediliyor (> %20)"

@@ -42,7 +42,10 @@ RETURNING id, event_id, (xmax = 0) AS inserted
 
 ## 2-3. Aday ve puan
 
-Aday: `origin_time ±60 sn` **ve** `ST_DWithin(location, nokta, 100 km)`.
+Aday: `origin_time ±W` **ve** `ST_DWithin(location, nokta, R)`. Plan §8'de
+W = 60 sn, R = 100 km idi; replay ölçümünden sonra **W = 10 sn, R = 50 km**
+(bkz. "Eşiklerin ayarı"). Aşağıdaki formül Plan değerleriyle yazılmıştır;
+kodda ölçekler pencereyle birlikte değişir.
 Zaman B-tree, mesafe GIST indeksini kullanır.
 
 ```
@@ -131,6 +134,75 @@ olayları `SELECT … FOR UPDATE` / advisory lock ile kilitlemek.
   komşularını yeniden değerlendirmek) — replay ölçümü gerekli gösterirse.
 - **Eski güncellemenin geç gelmesi.** Kaynak kayıtlarında sürüm bilgisi yok;
   4,1 düzeltmesi 4,3'ten önce işlenirse son yazılan (4,3) kalır.
-- **Eşikler tahmini.** 60 sn / 100 km / 0,6 ve aynı-kaynak 5 sn / 10 km / 0,5
-  replay ile ayarlanacak. Ortamdan: `ARTCI_MATCH_WINDOW`,
+- **Eşikler sentetik veriyle ayarlandı.** Gerçek bir katalogla yeniden
+  doğrulanmalı (bkz. "Eşiklerin ayarı"). Ortamdan: `ARTCI_MATCH_WINDOW`,
   `ARTCI_MATCH_RADIUS_KM`, `ARTCI_MATCH_MIN_SCORE`.
+
+## Eşiklerin ayarı
+
+Plan §8'deki 60 sn / 100 km / 0,6 başlangıç tahminiydi. `replay` aracıyla
+ölçüldü ve değiştirildi.
+
+### Veri
+
+Gerçek bir artçı kataloğuna (kaynakların aynı döneme ait kayıtları) bu
+geliştirme ortamından erişilemedi. Bunun yerine **sentetik** bir dizi
+kullanıldı (`internal/replay/gen.go`, `replay gen`):
+
+- M6,1 ana şok (Sındırgı konumu), 24 saatte 400 artçı; zamanlar değiştirilmiş
+  Omori yasasıyla (c = 10 dk, p = 1,1), büyüklükler Gutenberg-Richter ile (b = 1).
+- Her kaynak (AFAD, Kandilli, EMSC) her depremi kendi tamlık olasılığı,
+  gecikmesi (1–8 dk) ve ölçüm farklarıyla raporlar: oluş zamanı ±0,8–1,5 sn,
+  konum ±2,5–4 km, büyüklük ±0,12–0,20 (1σ); bir kısmı sonradan revize edilir.
+- Ana şoktan sonraki ilk dakikalarda küçük depremler kaçırılır (kısa vadeli eksiklik).
+
+Sentetik verinin üstünlüğü: her raporun hangi gerçek depreme ait olduğu
+bilinir, doğruluk kesin ölçülür. Zayıflığı: kaynaklar arası farkların
+dağılımı benim varsayımımdır. Bu yüzden tarama **iki gürültü düzeyinde**
+(varsayılan ve 2 katı) yapıldı ve sıralama ikisinin ortalamasına göre
+yapıldı; yalnızca varsayılan gürültüye iyi oturan eşik seçilmesin diye.
+
+### Ölçüt
+
+Çift tabanlı precision/recall (`internal/replay/metrics.go`): farklı
+kaynaklardan gelen her rapor çifti için "aynı deprem mi?" ile "aynı olaya mı
+bağlandı?" karşılaştırılır. Düşük precision = farklı depremler birleşiyor;
+düşük recall = aynı deprem birden çok olay olarak görünüyor (mükerrer bildirim).
+
+### Tarama
+
+```
+ARTCI_SWEEP=1 go test ./internal/merger -run Sweep -v
+```
+
+Bellek içi merger ile 217 eşik bileşimi × 2 gürültü × 3 tohum. Bellek içi
+sonuç, aynı katalogla PostGIS + Redis üzerinde çalışan gerçek merger'la
+birebir aynı çıktı (precision 0,8991 / recall 0,9469, iki yolda da).
+
+| Eşikler (pencere / yarıçap / eşik / aynı-kaynak) | F1 (1×) | F1 (2× gürültü) | Ortalama |
+|---|---|---|---|
+| **Plan §8:** 60 sn / 100 km / 0,6 / 5 sn | 0,847 | 0,851 | 0,849 |
+| **Seçilen:** 10 sn / 50 km / 0,5 / 2 sn | 0,959 | 0,954 | **0,956** |
+| 15 sn / 50 km / 0,6 / 2 sn | 0,962 | 0,948 | 0,955 |
+| 5 sn / 30 km / 0,5 (yalnız 1×'te en iyi) | 0,982 | < 0,92 | — |
+
+Okuma:
+
+- **Asıl sorun zaman penceresiydi.** Aynı depremin kaynaklar arası Δt'si
+  neredeyse hep birkaç saniye; 60 sn'lik pencerede ise yoğun dizide 3–10 farklı
+  deprem aday oluyordu. İlk koşuda yanlış birleşen çiftlerin medyan Δt'si
+  8 sn, doğru çiftlerinki 0,9 sn idi.
+- **5 sn penceresi aşırı uyum.** Varsayılan gürültüde en iyisi ama gürültü
+  iki katına çıkınca listeden düşüyor. Gerçek kurumların farkları benim
+  varsayımımdan büyükse ilk bozulacak seçenek bu.
+- **Aynı-kaynak istisnası** (0 / 2 / 5 sn) sonucu neredeyse hiç
+  değiştirmedi; Plan §8'deki "aynı depremi iki id ile yayınlama" durumu
+  için 2 sn ile korundu.
+- **Yoğunluk sınırı.** Aynı ayarla 10 kat yoğun bir dizide (günde 4000
+  artçı) F1 0,70'e düşüyor. Açgözlü eşleştirme saniyeler arayla olan
+  depremleri ayıramıyor; bu bölümün başındaki "çapraz artçılar" sınırı.
+  Gerekirse çözüm yeniden kümeleme.
+
+**Gerçek veriyle yapılacak:** kaynakların aynı döneme ait kataloglarını
+indirip elle (ya da bir referans katalogla) eşleyerek `truth` etiketli bir
+`replay` kataloğu oluşturmak ve taramayı onunla tekrarlamak.

@@ -1,0 +1,64 @@
+# Plan §14 / §16 gün 19: lint, test, red-team, build — her push ve PR'da.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: artci
+          POSTGRES_PASSWORD: artci
+          POSTGRES_DB: artci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U artci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      ARTCI_TEST_POSTGRES_DSN: postgres://artci:artci@localhost:5432/artci?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt gerekli:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      # Red-team ayrı adım: kırmızıya dönerse hangi guardrail'in bozulduğu
+      # CI özetinde doğrudan görünsün (Plan §11).
+      - name: red-team (LLM doğrulayıcısı, kayıtlı yanıtlar)
+        run: go test ./internal/summary -run 'RedTeam|TemplateAlwaysValid' -count=1 -v
+
+      - name: test (birim + PostGIS entegrasyon, -race)
+        run: go test ./... -race -count=1
+
+      - name: build
+        run: |
+          for c in ./cmd/*; do go build -o /dev/null "$c"; done
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build
+        run: docker build -t artci:ci .

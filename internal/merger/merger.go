@@ -157,13 +157,17 @@ func (s *Service) reconsider(ctx context.Context, tx Tx, r normalize.Report, res
 		if fit.Action != match.Attach {
 			s.Log.Info("rapor güncellemesi olayı böldü",
 				"source", r.Source, "source_event_id", r.SourceEventID, "event_id", res.EventID)
+			prev, err := tx.GetEvent(ctx, res.EventID) // koparmadan önce: kaynak listesi değişimi görünsün
+			if err != nil {
+				return err
+			}
 			if err := tx.AttachReport(ctx, res.ReportID, ""); err != nil {
 				return err
 			}
-			if _, err := s.recompute(ctx, tx, res.EventID); err != nil {
+			if _, err := s.recomputeFrom(ctx, tx, prev); err != nil {
 				return err
 			}
-			_, err := s.place(ctx, tx, r, res.ReportID)
+			_, err = s.place(ctx, tx, r, res.ReportID)
 			return err
 		}
 	}
@@ -179,10 +183,17 @@ func (s *Service) place(ctx context.Context, tx Tx, r normalize.Report, reportID
 	}
 	d := s.Cfg.Decide(r, cands)
 	if d.Action == match.Attach {
+		// Önceki hâl bağlamadan ÖNCE okunur. Kaynak listesi raporlardan
+		// türetildiği için sonra okunursa yeni kaynağı zaten içerir ve yalnızca
+		// kaynağı değişen olay yeni sürüm almaz, yayınlanmazdı.
+		prev, err := tx.GetEvent(ctx, d.EventID)
+		if err != nil {
+			return "", err
+		}
 		if err := tx.AttachReport(ctx, reportID, d.EventID); err != nil {
 			return "", err
 		}
-		if _, err := s.recompute(ctx, tx, d.EventID); err != nil {
+		if _, err := s.recomputeFrom(ctx, tx, prev); err != nil {
 			return "", err
 		}
 		return DecisionAttached, nil
@@ -207,6 +218,12 @@ func (s *Service) recompute(ctx context.Context, tx Tx, eventID string) (bool, e
 	if err != nil {
 		return false, err
 	}
+	return s.recomputeFrom(ctx, tx, prev)
+}
+
+// recomputeFrom, prev'i (üyelik değişmeden önceki hâl) karşılaştırma tabanı alır.
+func (s *Service) recomputeFrom(ctx context.Context, tx Tx, prev normalize.Event) (bool, error) {
+	eventID := prev.ID
 	reports, err := tx.ReportsForEvent(ctx, eventID)
 	if err != nil {
 		return false, err

@@ -4,9 +4,9 @@
 // Ortam değişkenleri (app.LoadConfig'e ek olarak):
 //
 //	ARTCI_MERGER_CONSUMER   tüketici adı (varsayılan "merger-1")
-//	ARTCI_MATCH_WINDOW      aday zaman penceresi (varsayılan 60s)
-//	ARTCI_MATCH_RADIUS_KM   aday yarıçapı (varsayılan 100)
-//	ARTCI_MATCH_MIN_SCORE   bağlama eşiği (varsayılan 0.6)
+//	ARTCI_MATCH_WINDOW      aday zaman penceresi (varsayılan 10s; Plan §8: 60s)
+//	ARTCI_MATCH_RADIUS_KM   aday yarıçapı (varsayılan 50; Plan §8: 100)
+//	ARTCI_MATCH_MIN_SCORE   bağlama eşiği (varsayılan 0.5; Plan §8: 0.6)
 package main
 
 import (

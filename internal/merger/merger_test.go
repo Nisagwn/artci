@@ -183,14 +183,21 @@ func TestPlan8_SameSourceTwoIDs_SameEvent(t *testing.T) {
 }
 
 func TestPlan8_AftershockTwoRealQuakes_TwoEvents(t *testing.T) {
-	// 20 sn arayla, ~15 km uzakta iki gerçek deprem. Puan ~0,8 (≥0,6) olduğu
-	// halde "bu kaynaktan başka rapor yok" kuralı onları ayrı tutmalı.
+	// Plan §8: 20 sn arayla, ~15 km uzakta iki gerçek deprem -> iki olay.
+	// Ayarlanmış eşiklerde (10 sn pencere) ikinci deprem zaten aday değildir.
 	h := newHarness(t)
-	a := rep("afad", "a1", 0, 39.21, 28.15, 4.1)
-	b := rep("afad", "a2", 20, 39.21+0.135, 28.15, 3.8)
+	h.handle(rep("afad", "a1", 0, 39.21, 28.15, 4.1))
+	if d := h.handle(rep("afad", "a2", 20, 39.21+0.135, 28.15, 3.8)); d != DecisionNewEvent {
+		t.Fatalf("ikinci deprem yeni olay olmalı: %s", d)
+	}
 
-	cand := match.CandidateOf("x", []normalize.Report{a})
-	if s := match.DefaultConfig().Score(cand, b); s < 0.6 {
+	// Kuralın kendisi: pencere içinde (6 sn, ~10 km) puan eşiği geçse bile
+	// "bu kaynaktan başka rapor yok" kuralı iki depremi ayrı tutmalı.
+	h = newHarness(t)
+	a := rep("afad", "a1", 0, 39.21, 28.15, 4.1)
+	b := rep("afad", "a2", 6, 39.21+0.09, 28.15, 3.8)
+	cfg := match.DefaultConfig()
+	if s := cfg.Score(match.CandidateOf("x", []normalize.Report{a}), b); s < cfg.MinScore {
 		t.Fatalf("senaryo puan eşiğini geçmeli ki kural sınansın; puan=%.2f", s)
 	}
 	h.handle(a)
@@ -198,16 +205,7 @@ func TestPlan8_AftershockTwoRealQuakes_TwoEvents(t *testing.T) {
 		t.Fatalf("ikinci deprem yeni olay olmalı: %s", d)
 	}
 	if h.eventCount() != 2 {
-		t.Fatalf("iki olay bekleniyordu: %+v", h.snapshot())
-	}
-
-	// Diğer kaynağın raporları kendi depremlerine (en yüksek puan) gitmeli.
-	h.handle(rep("kandilli", "k2", 20.5, 39.21+0.14, 28.16, 3.9))
-	h.handle(rep("kandilli", "k1", -0.5, 39.20, 28.16, 4.3))
-	got := h.snapshot()
-	want := []string{"afad|a1,kandilli|k1", "afad|a2,kandilli|k2"}
-	if len(got) != 2 || got[0].Members != want[0] || got[1].Members != want[1] {
-		t.Fatalf("üyelik yanlış: %+v", got)
+		t.Fatalf("iki olay olmalı: %d", h.eventCount())
 	}
 }
 
@@ -378,13 +376,14 @@ func sameQuake(a, b normalize.Report) bool { return a.SourceEventID[1:] == b.Sou
 
 // Açgözlü (online) eşleştirmenin bilinen sınırı: önce Kandilli-1 gelir, sonra
 // AFAD-2. Elinde yalnızca 1. deprem olan olay, AFAD-2 için tek ve geçerli aday
-// (puan ~0,8, olayda AFAD yok) -> bağlanır. Olay sayısı yine doğru (2) kalır ama
-// üyelik çaprazlanır. Bunu düzeltmek yeniden kümeleme ister; MVP'de bilinçli
-// olarak yapılmadı (docs/MATCHING.md).
+// (pencere içinde, olayda AFAD yok) -> bağlanır. Olay sayısı yine doğru (2)
+// kalır ama üyelik çaprazlanır. Ayarlanmış eşikler bu durumu 10 sn / 50 km
+// içindeki depremlerle sınırladı (Plan'ın 20 sn örneği artık doğru ayrılıyor);
+// tamamen düzeltmek yeniden kümeleme ister (docs/MATCHING.md).
 func TestKnownLimitation_CrossedAftershocks(t *testing.T) {
 	h := newHarness(t)
 	k1 := rep("kandilli", "k1", -0.5, 39.20, 28.16, 4.3)
-	a2 := rep("afad", "a2", 20, 39.21+0.135, 28.15, 3.8)
+	a2 := rep("afad", "a2", 6, 39.21+0.09, 28.15, 3.8)
 	h.handle(k1)
 	if d := h.handle(a2); d != DecisionAttached {
 		t.Fatalf("sınır değişti mi? karar=%s (değiştiyse dokümanı güncelle)", d)
@@ -514,5 +513,34 @@ func TestPublishedSequence(t *testing.T) {
 	}
 	if last.IsNew || *last.PrevMagnitude != 4.3 || last.Event.Magnitude != 4.1 || last.Event.Version != 3 {
 		t.Fatalf("son yayın: %+v prev=%v", last, *last.PrevMagnitude)
+	}
+}
+
+// Yalnızca kaynak listesi değişen bağlama da yeni sürümdür (docs/MATCHING.md
+// §6: "kaynak listesi dahil"). AFAD önce gelirse sonraki kaynaklar gösterilen
+// değerleri değiştirmez; ama haritadaki "Kaynaklar" ve özetteki "Veriler"
+// değişir, bu yüzden olay yayınlanmalıdır. (Gerileme: önceki hâl bağlamadan
+// sonra okunuyordu ve yeni kaynağı zaten içeriyordu.)
+func TestAttachLowerPrioritySource_BumpsVersionAndPublishes(t *testing.T) {
+	afad, kand, emsc := loadSindirgi(t)
+	h := newHarness(t)
+	h.handle(afad)
+	for i, r := range []normalize.Report{emsc, kand} {
+		if d := h.handle(r); d != DecisionAttached {
+			t.Fatalf("karar: %s", d)
+		}
+		ev := h.onlyEvent()
+		if ev.Version != i+2 {
+			t.Fatalf("%s bağlandıktan sonra sürüm %d olmalı: %+v", r.Source, i+2, ev)
+		}
+		if n := len(h.pub.got); n != i+2 {
+			t.Fatalf("%s bağlanınca olay yayınlanmalı: %d yayın", r.Source, n)
+		}
+		if ev.Magnitude != afad.Magnitude {
+			t.Fatalf("gösterilen değer AFAD'da kalmalı: %+v", ev)
+		}
+	}
+	if last := h.pub.got[len(h.pub.got)-1]; !slices.Equal(last.Event.Sources, []string{"afad", "kandilli", "emsc"}) {
+		t.Fatalf("son yayının kaynakları: %v", last.Event.Sources)
 	}
 }
