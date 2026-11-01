@@ -29,7 +29,8 @@ func simulate(t testing.TB, entries []replay.Entry, cfg match.Config) replay.Acc
 		r := e.Report
 		r.ReceivedAt = r.OriginTime.Add(time.Duration(e.ArriveS) * time.Second)
 		if _, err := svc.Handle(context.Background(), r); err != nil {
-			t.Fatal(err)
+			t.Error(err) // Fatal değil: tarama simulate'i goroutine'lerden çağırır
+			return replay.Accuracy{}
 		}
 		truth[key(r.Source, r.SourceEventID)] = e.Truth
 	}

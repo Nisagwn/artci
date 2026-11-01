@@ -134,9 +134,11 @@ olayları `SELECT … FOR UPDATE` / advisory lock ile kilitlemek.
   komşularını yeniden değerlendirmek) — replay ölçümü gerekli gösterirse.
 - **Eski güncellemenin geç gelmesi.** Kaynak kayıtlarında sürüm bilgisi yok;
   4,1 düzeltmesi 4,3'ten önce işlenirse son yazılan (4,3) kalır.
-- **Eşikler sentetik veriyle ayarlandı.** Gerçek bir katalogla yeniden
-  doğrulanmalı (bkz. "Eşiklerin ayarı"). Ortamdan: `ARTCI_MATCH_WINDOW`,
-  `ARTCI_MATCH_RADIUS_KM`, `ARTCI_MATCH_MIN_SCORE`.
+- **Eşikler iki kaynaklı gerçek veriyle doğrulandı.** Sentetik veriyle
+  seçildi, gerçek Sındırgı dizisinin AFAD ve Kandilli çözümleriyle doğrulandı
+  (bkz. "Gerçek dizide doğrulama"). EMSC ISC bülteninde olmadığı için gerçek
+  veride sınanmadı. Ortamdan: `ARTCI_MATCH_WINDOW`, `ARTCI_MATCH_RADIUS_KM`,
+  `ARTCI_MATCH_MIN_SCORE`.
 
 ## Eşiklerin ayarı
 
@@ -203,6 +205,79 @@ Okuma:
   depremleri ayıramıyor; bu bölümün başındaki "çapraz artçılar" sınırı.
   Gerekirse çözüm yeniden kümeleme.
 
-**Gerçek veriyle yapılacak:** kaynakların aynı döneme ait kataloglarını
-indirip elle (ya da bir referans katalogla) eşleyerek `truth` etiketli bir
-`replay` kataloğu oluşturmak ve taramayı onunla tekrarlamak.
+## Gerçek dizide doğrulama
+
+Sentetik veriyle seçilen eşikler, gerçek bir artçı dizisiyle doğrulandı.
+
+### Veri: ISC bülteni
+
+AFAD API'si yalnızca son ~10 günü tutuyor; geçmiş bir dizi oradan alınamıyor.
+[ISC bülteni](http://www.isc.ac.uk/iscbulletin/) (International Seismological
+Centre) ise her deprem için tek bir olay kaydı ve altında kurumların **kendi
+çözümlerini** ayrı ayrı tutuyor: `AFAD` ve `ISK` (Kandilli). Bu tam olarak
+tekilleştirmenin girdisi ve doğru cevabı:
+
+- her kurum çözümü bir rapor (gerçek zaman, konum, büyüklük farklarıyla),
+- ISC olay kimliği `truth`.
+
+```
+go run ./cmd/replay isc -out testdata/replay/sindirgi-isc-2025-08.jsonl.gz
+```
+
+10 Ağustos 2025 Sındırgı (Mw 6,1) depreminin ilk 7 günü, 38,7–39,7 K /
+27,5–28,9 D: **4201 olay, 6949 rapor** (AFAD 3332, Kandilli 3617); 2748
+olayda iki kurumun da çözümü var. Büyüklükler 0,7–6,1, medyan 1,8. Bültende
+yayın gecikmesi olmadığı için raporların merger'a geliş anı sentetik
+üreticideki kaynak gecikme modelinden örneklenir; tarama üç farklı varış
+sırasının ortalamasıdır.
+
+Aynı olaydaki AFAD–Kandilli farkları (gerçek):
+
+| | p50 | p90 | p95 | p99 |
+|---|---|---|---|---|
+| \|Δt\| | 0,6 sn | 1,4 sn | 2,2 sn | 30,8 sn |
+| mesafe | 2,5 km | 7,6 km | 10,2 km | 20,5 km |
+| \|ΔM\| | 0,2 | 0,4 | 0,5 | 0,7 |
+
+Sentetik modelin varsayımlarıyla (Δt 1σ 0,8–1,0 sn, konum 2,5–3 km) uyumlu;
+gerçek dağılımın kuyruğu daha uzun.
+
+**Doğru cevabın sınırı.** Dizinin olayları ISC tarafından henüz
+incelenmedi ("Event not reviewed by the ISC"); gruplama otomatik. 45 çiftte
+(%1,6) iki çözüm aynı olay sayılmış ama 10 sn / 50 km'den uzak (en uç: 59 sn,
+113 km). Bunlar ya ISC'nin yanlış birleştirmesi ya da kurumların gerçekten çok
+farklı çözümü; her iki durumda da hiçbir makul pencere onları bağlayamaz. Bu
+yüzden ulaşılabilir recall ≈ **0,984**. Tersine, 25 çift ayrı olay sayılmış
+ama 3 sn ve 15 km içinde: büyük ihtimalle ISC'nin bölmesi gerekmeyen olaylar,
+precision'ı biraz düşük gösterir.
+
+### Sonuç
+
+```
+ARTCI_SWEEP=1 go test ./internal/merger -run SweepReal -v
+```
+
+| Eşikler | Precision | Recall | F1 (gerçek) | F1 (sentetik) |
+|---|---|---|---|---|
+| Plan §8: 60 sn / 100 km / 0,6 | 0,945 | 0,942 | 0,944 | 0,847 |
+| **Varsayılan: 10 sn / 50 km / 0,5** | **0,991** | **0,981** | **0,986** | **0,959** |
+| 10 sn / 50 km / 0,4 (gerçekte en iyi) | 0,991 | 0,983 | 0,987 | 0,951 |
+| 5 sn / 50 km / 0,5 | 0,991 | 0,977 | 0,984 | 0,981 |
+
+Okuma:
+
+- **Varsayılan eşikler gerçek veride doğrulandı;** değiştirilmedi. En iyi
+  bileşimle farkı 0,0007 (gürültü düzeyinde), ve o bileşim sentetik veride
+  daha kötü. 72 bileşimin en iyi 12'si 0,983–0,987 arasında: sonuç eşiklere
+  duyarlı değil, düz bir tepe.
+- **Plan §8'in geniş penceresi gerçekte de yanlış birleştiriyor:** precision
+  0,991 → 0,945. Etki sentetik dizideki kadar büyük değil, çünkü gerçek
+  dizinin en yoğun dönemindeki küçük depremlerin bir kısmını kurumlar
+  kaydetmemiş.
+- **Kalan hatanın çoğu doğru cevaptan.** Recall 0,981, ulaşılabilir tavan
+  0,984. Varsayılan ayarla 4201 olaydan %98,2'si tam doğru birleştirildi.
+- **5 sn penceresi** gerçek veride de iyi (0,984) ama Δt'nin p99'u 30 sn;
+  daha dar pencere kuyruğu daha çok keser. 10 sn korundu.
+
+`TestTunedConfigOnRealSequence` her `go test`'te bu kataloğu oynatır;
+F1 0,98'in ya da precision 0,985'in altına düşerse kırılır.

@@ -26,6 +26,13 @@ type memStore struct {
 	nextID  int64
 	now     time.Time
 
+	// Dizinler: gerçek dizide (binlerce rapor) her çağrıda tüm raporları
+	// taramak taramayı saatlere çıkarıyordu.
+	byID    map[int64]*memReport
+	byEvent map[string]map[*memReport]bool
+
+	undo []func() // açık transaction'ın geri alma günlüğü (ters sırayla çalışır)
+
 	failTx error // != nil ise InTx fn'den sonra bu hatayla geri alır (çökme taklidi)
 }
 
@@ -43,6 +50,7 @@ type memEvent struct {
 
 func newMemStore() *memStore {
 	return &memStore{reports: map[string]*memReport{}, events: map[string]*memEvent{},
+		byID: map[int64]*memReport{}, byEvent: map[string]map[*memReport]bool{},
 		now: time.Date(2026, 10, 30, 13, 0, 0, 0, time.UTC)}
 }
 
@@ -63,39 +71,45 @@ func dbify(r normalize.Report) normalize.Report {
 	return r
 }
 
-func (m *memStore) clone() (map[string]*memReport, map[string]*memEvent, int64) {
-	rs := make(map[string]*memReport, len(m.reports))
-	for k, v := range m.reports {
-		c := *v
-		rs[k] = &c
+// setEventID, raporun olayını değiştirir ve dizini günceller.
+func (m *memStore) setEventID(r *memReport, eventID string) {
+	if r.EventID != "" {
+		delete(m.byEvent[r.EventID], r)
 	}
-	es := make(map[string]*memEvent, len(m.events))
-	for k, v := range m.events {
-		c := *v
-		es[k] = &c
+	r.EventID = eventID
+	if eventID != "" {
+		if m.byEvent[eventID] == nil {
+			m.byEvent[eventID] = map[*memReport]bool{}
+		}
+		m.byEvent[eventID][r] = true
 	}
-	return rs, es, m.nextID
 }
+
+// eventReports, olaya bağlı raporlardır (sırasız; map gibi).
+func (m *memStore) eventReports(eventID string) map[*memReport]bool { return m.byEvent[eventID] }
 
 func (m *memStore) InTx(ctx context.Context, fn func(Tx) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	rs, es, id := m.clone()
+	m.undo = m.undo[:0]
 	err := fn(&memTx{m})
 	if err == nil && m.failTx != nil {
 		err = m.failTx
 	}
-	if err != nil {
-		m.reports, m.events, m.nextID = rs, es, id // ROLLBACK
+	if err != nil { // ROLLBACK
+		for i := len(m.undo) - 1; i >= 0; i-- {
+			m.undo[i]()
+		}
 	}
+	m.undo = m.undo[:0]
 	return err
 }
 
 func (m *memStore) sources(eventID string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, r := range m.reports {
-		if r.EventID == eventID && !seen[r.R.Source] {
+	for r := range m.eventReports(eventID) {
+		if !seen[r.R.Source] {
 			seen[r.R.Source] = true
 			out = append(out, r.R.Source)
 		}
@@ -150,13 +164,17 @@ func (t *memTx) UpsertReport(ctx context.Context, r normalize.Report) (store.Ups
 		res := store.UpsertResult{ReportID: old.ID, EventID: old.EventID, Status: store.ReportUnchanged}
 		if match.ReportChanged(old.R, r) {
 			r.ReceivedAt = old.R.ReceivedAt // SQL'deki gibi received_at korunur
+			prev := old.R
+			m.undo = append(m.undo, func() { old.R = prev })
 			old.R = r
 			res.Status = store.ReportUpdated
 		}
 		return res, nil
 	}
 	m.nextID++
-	m.reports[k] = &memReport{ID: m.nextID, R: r}
+	nr := &memReport{ID: m.nextID, R: r}
+	m.reports[k], m.byID[nr.ID] = nr, nr
+	m.undo = append(m.undo, func() { delete(m.reports, k); delete(m.byID, nr.ID); m.nextID-- })
 	return store.UpsertResult{ReportID: m.nextID, Status: store.ReportInserted}, nil
 }
 
@@ -169,10 +187,8 @@ func (t *memTx) FindCandidateEvents(ctx context.Context, r normalize.Report, win
 			continue
 		}
 		c := match.Candidate{EventID: id, OriginTime: e.Ev.OriginTime, Lat: e.Ev.Lat, Lon: e.Ev.Lon, Magnitude: e.Ev.Magnitude}
-		for _, rep := range m.reports {
-			if rep.EventID == id {
-				c.Members = append(c.Members, match.MemberOf(rep.R))
-			}
+		for rep := range m.eventReports(id) {
+			c.Members = append(c.Members, match.MemberOf(rep.R))
 		}
 		out = append(out, c)
 	}
@@ -189,10 +205,8 @@ func (t *memTx) GetEvent(ctx context.Context, id string) (normalize.Event, error
 
 func (t *memTx) ReportsForEvent(ctx context.Context, eventID string) ([]normalize.Report, error) {
 	var out []normalize.Report
-	for _, r := range t.m.reports {
-		if r.EventID == eventID {
-			out = append(out, r.R)
-		}
+	for r := range t.m.eventReports(eventID) {
+		out = append(out, r.R)
 	}
 	return out, nil
 }
@@ -206,6 +220,7 @@ func (t *memTx) CreateEvent(ctx context.Context, ev normalize.Event) error {
 	ev.Magnitude = r1(ev.Magnitude)
 	ev.CreatedAt, ev.UpdatedAt = t.m.now, t.m.now
 	t.m.events[ev.ID] = &memEvent{Ev: ev}
+	t.m.undo = append(t.m.undo, func() { delete(t.m.events, ev.ID) })
 	return nil
 }
 
@@ -218,23 +233,26 @@ func (t *memTx) UpdateEvent(ctx context.Context, ev normalize.Event) (int, error
 	ev.Version = e.Ev.Version + 1
 	ev.Magnitude = r1(ev.Magnitude)
 	ev.CreatedAt, ev.UpdatedAt = e.Ev.CreatedAt, t.m.now
+	prev := e.Ev
+	t.m.undo = append(t.m.undo, func() { e.Ev = prev })
 	e.Ev = ev
 	return ev.Version, nil
 }
 
 func (t *memTx) AttachReport(ctx context.Context, reportID int64, eventID string) error {
-	for _, r := range t.m.reports {
-		if r.ID == reportID {
-			if eventID != "" {
-				if _, ok := t.m.events[eventID]; !ok {
-					return fmt.Errorf("FK ihlali: olay %s yok", eventID)
-				}
-			}
-			r.EventID = eventID
-			return nil
+	r, ok := t.m.byID[reportID]
+	if !ok {
+		return fmt.Errorf("rapor yok: %d", reportID)
+	}
+	if eventID != "" {
+		if _, ok := t.m.events[eventID]; !ok {
+			return fmt.Errorf("FK ihlali: olay %s yok", eventID)
 		}
 	}
-	return fmt.Errorf("rapor yok: %d", reportID)
+	prev := r.EventID
+	t.m.undo = append(t.m.undo, func() { t.m.setEventID(r, prev) })
+	t.m.setEventID(r, eventID)
+	return nil
 }
 
 // memPub, yayınlanan mesajları biriktirir.

@@ -507,9 +507,9 @@ Her adımın sonunda **"bitti sayılır"** kriteri var. Kriter sağlanmadan sonr
 | 3 hafta yetmezse | Sıra: bildirim → LLM özeti → canlıya alma. Önce çekirdek (veri + tekilleştirme + harita) sağlam olmalı |
 
 **Açık sorular:**
-- [ ] Kandilli verisine erişim için en uygun ve izinli yol hangisi?
-- [ ] AFAD API'sinin sorgu sınırı var mı?
-- [ ] Yer adları için hangi şehir/ilçe veri setini kullanacağım?
+- [x] Kandilli verisine erişim için en uygun ve izinli yol hangisi? → Herkese açık `lst0.asp` sayfası, 30 sn aralıkla ve açık `User-Agent` ile (Türkiye saati, Windows-1254).
+- [ ] AFAD API'sinin sorgu sınırı var mı? → Belgelenmiş bir sınır bulamadım; 30 sn aralık + backoff + circuit breaker ile korunuyor. Canlıda 429/5xx oranı izlenecek.
+- [x] Yer adları için hangi şehir/ilçe veri setini kullanacağım? → İlçe adı kaynağın kendi yer adından; "en yakın il" için `internal/geo` içindeki 81 il merkezi.
 
 ---
 
@@ -525,12 +525,12 @@ Her adımın sonunda **"bitti sayılır"** kriteri var. Kriter sağlanmadan sonr
 - "Neden Kafka değil?", "Neden tek merger?", "Neden exactly-once değil?" bölümleri
 - Etik notu
 
-### CV maddesi taslağı (sayılar ölçüldükten sonra doldurulacak)
+### CV maddesi taslağı (bildirim gecikmesi canlıda ölçülünce tamamlanacak)
 
 > **Artçı — Gerçek Zamanlı Deprem Veri Hattı** · Go · PostgreSQL + PostGIS · Redis Streams · Prometheus · [canlı link]
-> - AFAD, Kandilli ve EMSC'den canlı deprem verisi toplayan; aynı depremi zaman, konum ve büyüklüğe dayalı puanlamayla tekilleştiren olay güdümlü bir veri hattı geliştirdim; geçmiş bir artçı dizisinin tekrarında **[%__]** birleştirme doğruluğu ölçtüm.
+> - AFAD, Kandilli ve EMSC'den canlı deprem verisi toplayan; aynı depremi zaman, konum ve büyüklüğe dayalı puanlamayla tekilleştiren olay güdümlü bir veri hattı geliştirdim; gerçek bir artçı dizisinin (Sındırgı 2025, 4201 deprem, 6949 rapor) tekrarında **F1 0,986** birleştirme doğruluğu ölçtüm.
 > - At-least-once teslimat ve veritabanı kısıtlarıyla idempotent işleme sayesinde kullanıcıların bir deprem için tek bildirim almasını sağladım; uçtan uca bildirim gecikmesi p95 **[__ sn]**.
-> - LLM özetlerinde sayıları deterministik kodla üretip metindeki her sayıyı doğrulayan bir guardrail katmanı kurdum; **[__]** senaryoluk red-team seti CI'da koşuyor.
+> - LLM özetlerinde sayıları deterministik kodla üretip metindeki her sayıyı doğrulayan bir guardrail katmanı kurdum; **48** senaryoluk red-team seti CI'da koşuyor.
 
 ### Mülakatta 2 dakikalık anlatım
 

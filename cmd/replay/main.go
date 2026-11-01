@@ -4,6 +4,8 @@
 //	replay gen -out testdata/replay/sindirgi-sentetik.jsonl      # sentetik dizi üret
 //	replay run -in testdata/replay/sindirgi-sentetik.jsonl -speed 10
 //	replay run -in ... -speed 0                                  # olabildiğince hızlı (iş hacmi)
+//	replay run -in testdata/replay/sindirgi-isc-2025-08.jsonl.gz -speed 0 # gerçek dizi
+//	replay isc -out testdata/replay/sindirgi-isc-2025-08.jsonl.gz # ISC bülteninden gerçek dizi
 //
 // run, raporları reports.raw akışına yazar; merger'ın çalışıyor olması gerekir.
 // Ölçülenler:
@@ -18,11 +20,15 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
@@ -37,6 +43,7 @@ import (
 	"github.com/nisaguven/artci/internal/app"
 	"github.com/nisaguven/artci/internal/normalize"
 	"github.com/nisaguven/artci/internal/replay"
+	"github.com/nisaguven/artci/internal/source"
 	"github.com/nisaguven/artci/internal/store"
 	"github.com/nisaguven/artci/internal/stream"
 )
@@ -51,6 +58,8 @@ func main() {
 		err = gen(os.Args[2:])
 	case "run":
 		err = run(os.Args[2:])
+	case "isc":
+		err = isc(os.Args[2:])
 	default:
 		usage()
 	}
@@ -61,7 +70,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "kullanım: replay gen [-out dosya] | replay run -in dosya [-speed 10]")
+	fmt.Fprintln(os.Stderr, "kullanım: replay gen [-out dosya] | replay isc [-out dosya] | replay run -in dosya [-speed 10]")
 	os.Exit(2)
 }
 
@@ -95,6 +104,91 @@ func gen(args []string) error {
 	return nil
 }
 
+// isc, ISC bülteninden gerçek bir dizinin AFAD ve Kandilli çözümlerini çekip
+// katalog yazar (bkz. internal/replay/isc.go). Varsayılanlar 10 Ağustos 2025
+// Sındırgı (Mw 6,1) depreminin ilk 7 günüdür. İstekler günlük parçalara
+// bölünür: ISC tek seferde büyük aralıkta zaman aşımına düşüyor.
+func isc(args []string) error {
+	fs := flag.NewFlagSet("isc", flag.ExitOnError)
+	out := fs.String("out", "-", "çıktı dosyası (- = stdout)")
+	startS := fs.String("start", "2025-08-10T15:50:00Z", "başlangıç (UTC)")
+	days := fs.Int("days", 7, "gün sayısı")
+	bbox := fs.String("bbox", "38.7,39.7,27.5,28.9", "minlat,maxlat,minlon,maxlon")
+	place := fs.String("place", "Sındırgı (Balıkesir)", "raporlara yazılacak yer adı")
+	seed := fs.Uint64("seed", 1, "varış gecikmesi tohumu")
+	base := fs.String("url", "http://www.isc.ac.uk/fdsnws/event/1/query", "ISC FDSN adresi")
+	fs.Parse(args)
+
+	start, err := time.Parse(time.RFC3339, *startS)
+	if err != nil {
+		return fmt.Errorf("-start: %w", err)
+	}
+	b := strings.Split(*bbox, ",")
+	if len(b) != 4 {
+		return errors.New("-bbox: minlat,maxlat,minlon,maxlon")
+	}
+	hc := &http.Client{Timeout: 3 * time.Minute}
+	var obs []replay.Observation
+	for d := 0; d < *days; d++ {
+		from := start.Add(time.Duration(d) * 24 * time.Hour)
+		q := url.Values{}
+		q.Set("starttime", from.Format("2006-01-02T15:04:05"))
+		q.Set("endtime", from.Add(24*time.Hour).Format("2006-01-02T15:04:05"))
+		q.Set("minlatitude", b[0])
+		q.Set("maxlatitude", b[1])
+		q.Set("minlongitude", b[2])
+		q.Set("maxlongitude", b[3])
+		q.Set("includeallorigins", "true")
+		q.Set("includeallmagnitudes", "true")
+		req, err := http.NewRequest(http.MethodGet, *base+"?"+q.Encode(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("User-Agent", app.Env("ARTCI_USER_AGENT", source.UserAgent))
+		resp, err := hc.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			resp.Body.Close()
+			return fmt.Errorf("isc: %s: HTTP %d", from.Format("2006-01-02"), resp.StatusCode)
+		}
+		o, err := replay.ParseISC(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "%s: %d çözüm\n", from.Format("2006-01-02"), len(o))
+		obs = append(obs, o...)
+	}
+
+	entries := replay.CatalogFromObservations(obs, *place, *seed)
+	var w io.Writer = os.Stdout
+	if *out != "-" {
+		f, err := os.Create(*out)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		w = f
+		if strings.HasSuffix(*out, ".gz") {
+			zw := gzip.NewWriter(f)
+			defer zw.Close() // f.Close'dan önce çalışır
+			w = zw
+		}
+	}
+	if err := replay.WriteCatalog(w, entries); err != nil {
+		return err
+	}
+	truths, perSrc := map[string]bool{}, map[string]int{}
+	for _, e := range entries {
+		truths[e.Truth] = true
+		perSrc[e.Report.Source]++
+	}
+	fmt.Fprintf(os.Stderr, "%d rapor (%v), %d ISC olayı yazıldı\n", len(entries), perSrc, len(truths))
+	return nil
+}
+
 type result struct {
 	RunID         string             `json:"run_id"`
 	Reports       int                `json:"reports_published"`
@@ -110,7 +204,7 @@ type result struct {
 
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	in := fs.String("in", "", "katalog (JSONL)")
+	in := fs.String("in", "", "katalog (JSONL; .gz uzantılıysa gzip)")
 	speed := fs.Float64("speed", 10, "hızlandırma katsayısı; 0 = beklemeden")
 	limit := fs.Int("limit", 0, "yalnızca ilk N rapor (0 = hepsi)")
 	force := fs.Bool("force", false, "notifier grubu olsa da çalış")
@@ -125,7 +219,16 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := replay.ReadCatalog(f)
+	var r io.Reader = f
+	if strings.HasSuffix(*in, ".gz") {
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("%s: %w", *in, err)
+		}
+		r = zr
+	}
+	entries, err := replay.ReadCatalog(r)
 	f.Close()
 	if err != nil {
 		return err

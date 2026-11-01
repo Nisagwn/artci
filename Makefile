@@ -16,7 +16,7 @@ export ARTCI_REDIS_ADDR   ?= localhost:6379
 .DEFAULT_GOAL := help
 .PHONY: help dev-up dev-down build test test-integration redteam lint \
         run-ingest-afad run-ingest-kandilli run-ingest-emsc run-merger run-notifier \
-        run-summarizer run-api replay-gen replay docker-build up down
+        run-summarizer run-api replay-gen replay replay-real docker-build up down
 
 help: ## Bu yardım
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-22s %s\n", $$1, $$2}'
@@ -74,6 +74,9 @@ replay-gen: ## Sentetik artçı dizisi üret (CATALOG)
 
 replay: ## Kataloğu oynatıp doğruluk ve gecikmeyi ölç (merger çalışıyor olmalı)
 	$(GO) run ./cmd/replay run -in $(CATALOG) -speed $(SPEED) -cleanup
+
+replay-real: ## Gerçek Sındırgı 2025 dizisini (ISC) beklemeden oynat (merger çalışıyor olmalı)
+	$(GO) run ./cmd/replay run -in testdata/replay/sindirgi-isc-2025-08.jsonl.gz -speed 0 -cleanup
 
 # --- Üretim ---
 docker-build: ## İmajı derle (artci:latest)
