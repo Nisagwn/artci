@@ -85,7 +85,7 @@
   const emptyEl = $('empty');
   const countEl = $('count');
   const biggestEl = $('biggest');
-  const windowLabel = $('window-label');
+  const biggestWrap = $('biggest-wrap');
   const searchEl = $('search');
   const statusEl = $('status');
   const statusText = $('status-text');
@@ -295,18 +295,12 @@
       if (!biggest || e.ev.magnitude > biggest.ev.magnitude) biggest = e;
     }
     countEl.textContent = String(n);
-    windowLabel.textContent = WINDOW_LABELS[windowHours] + (query ? ' · “' + searchEl.value.trim() + '”' : '');
     emptyEl.hidden = n > 0;
     emptyEl.textContent = query
       ? 'Aramanızla eşleşen deprem yok. Zaman aralığını genişletmeyi deneyin.'
       : 'Bu filtrelerle ' + WINDOW_LABELS[windowHours] + ' deprem yok.';
-    biggestEl.hidden = !biggest;
-    if (biggest) {
-      const text = el('span');
-      text.append(el('span', 'label', 'En büyüğü · ' + ago(biggest.ev.origin_time)),
-        el('span', 'what', place(biggest.ev.place_name)));
-      biggestEl.replaceChildren(badge(biggest.ev.magnitude, 'small'), text);
-    }
+    biggestWrap.hidden = !biggest || n < 2;
+    if (biggest) biggestEl.textContent = num(biggest.ev.magnitude) + ' ' + place(biggest.ev.place_name);
   }
   biggestEl.addEventListener('click', () => { if (biggest) focusEntry(biggest); });
 
@@ -394,21 +388,12 @@
   }
   setInterval(() => { prune(); refreshTimes(); }, 60 * 1000);
 
-  // Düğme grubu: tıklanan düğme seçili olur, değeri onChange'e verilir.
-  function chips(id, onChange) {
-    const buttons = document.querySelectorAll('#' + id + ' button');
-    for (const b of buttons) {
-      b.addEventListener('click', () => {
-        for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
-        onChange(b.dataset.v);
-      });
-    }
-  }
+  const onSelect = (id, fn) => $(id).addEventListener('change', (e) => fn(e.target.value));
   const refilter = () => quietly(() => { for (const e of entries.values()) applyVisibility(e); });
 
-  chips('f-mag', (v) => { minMag = Number(v) || 0; refilter(); });
-  chips('f-sort', (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });
-  chips('f-hours', (v) => {
+  onSelect('f-mag', (v) => { minMag = Number(v) || 0; refilter(); });
+  onSelect('f-sort', (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });
+  onSelect('f-hours', (v) => {
     windowHours = Number(v) || 24;
     prune();
     loadRecent().catch(() => setStatus('degraded', 'Liste yüklenemedi'));

@@ -121,74 +121,57 @@ button { font: inherit; color: inherit; }
   border-left: 1px solid var(--border);
 }
 
-/* Özet: kaç deprem, en büyüğü hangisi. */
-.overview { padding: .9rem 1.1rem .5rem; }
-.list mark { background: color-mix(in srgb, var(--m4) 35%, transparent); color: inherit; border-radius: 2px; }
-.overview h2 { font-size: 1.15rem; margin: 0; }
-.overview h2 #count { font-size: 1.6rem; font-weight: 700; margin-right: .1rem; }
-.biggest {
-  margin-top: .5rem; width: 100%;
-  display: flex; align-items: center; gap: .6rem;
-  padding: .5rem .6rem; text-align: left; cursor: pointer;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-}
-.biggest:hover { border-color: var(--muted); }
-.biggest .label { display: block; font-size: .78rem; color: var(--muted); }
-.biggest .what { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.biggest > span:last-child { min-width: 0; }
-
-/* Arama ve filtreler. */
+/* Panelin üstü: arama, tek satır seçim, tek satır özet. Liste yer kaplasın. */
 .controls {
-  display: flex; flex-direction: column; gap: .45rem;
-  padding: .4rem 1.1rem .8rem;
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .8rem 1rem .6rem;
   border-bottom: 1px solid var(--border);
 }
 .search {
   display: flex; align-items: center; gap: .5rem;
-  padding: 0 .6rem; margin-bottom: .2rem;
+  padding: 0 .65rem;
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
   color: var(--muted);
 }
-.search:focus-within { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.search:focus-within { border-color: var(--accent); }
 .search input {
-  flex: 1; min-width: 0; padding: .55rem 0;
+  flex: 1; min-width: 0; padding: .5rem 0;
   font: inherit; color: var(--text); background: transparent; border: 0; outline: none;
 }
 .search input::placeholder { color: var(--muted); }
-.search kbd {
-  font: .75rem/1 ui-monospace, monospace; padding: .15rem .35rem;
-  border: 1px solid var(--border); border-radius: 4px;
-}
-.search:focus-within kbd { display: none; }
 
-/* Filtre: tek tıkla seçilen düğmeler. */
-.filter {
-  display: flex; align-items: center; gap: .35rem; flex-wrap: wrap;
-  font-size: .86rem;
+.selects { display: flex; gap: .4rem; }
+.selects label { flex: 1 1 auto; min-width: 0; }
+.selects select {
+  width: 100%; font: inherit; font-size: .85rem; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: .3rem .4rem; cursor: pointer;
 }
-.filter > span { color: var(--muted); width: 4.6rem; flex: none; }
-.filter button {
-  padding: .2rem .65rem; cursor: pointer;
-  background: transparent; border: 1px solid var(--border); border-radius: 999px;
+.selects select:hover { border-color: var(--muted); }
+
+.summary-line {
+  margin: 0; font-size: .85rem; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.filter button:hover { border-color: var(--muted); }
-.filter button[aria-pressed="true"] {
-  background: var(--text); color: var(--surface); border-color: var(--text);
+.summary-line #count { color: var(--text); font-weight: 600; }
+.biggest {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
 }
 
 /* ---- Liste ---- */
 .list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .list li { border-bottom: 1px solid var(--border); }
 .list button {
-  width: 100%; display: grid; grid-template-columns: auto 1fr; gap: .05rem .8rem;
+  width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 0 .7rem;
   align-items: center; text-align: left;
-  padding: .6rem 1.1rem; border: 0; background: none; cursor: pointer;
+  padding: .45rem 1rem; border: 0; background: none; cursor: pointer;
   transition: background-color 1.5s ease;
 }
 .list button:hover { background: var(--bg); }
 .list .badge { grid-row: span 2; }
 .list .place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.list .meta { color: var(--muted); font-size: .84rem; }
+.list .meta { color: var(--muted); font-size: .8rem; }
 /* Yeni/güncellenen satır: kısa ve yumuşak bir vurgu, yanıp sönme değil. */
 .list li.fresh button { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
@@ -196,8 +179,8 @@ button { font: inherit; color: inherit; }
 .badge {
   --c: var(--m0);
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2.6rem; height: 2.6rem; padding: 0 .3rem;
-  border-radius: 10px; font-weight: 700; font-size: 1.05rem;
+  min-width: 2.2rem; height: 2.2rem; padding: 0 .25rem;
+  border-radius: 8px; font-weight: 700; font-size: .95rem;
   background: color-mix(in srgb, var(--c) 20%, var(--surface));
   border: 1.5px solid var(--c);
 }
@@ -255,3 +238,4 @@ button { font: inherit; color: inherit; }
   .bar .sub { display: none; }
   body { height: auto; }
 }
+.list mark { background: color-mix(in srgb, var(--m4) 35%, transparent); color: inherit; border-radius: 2px; }

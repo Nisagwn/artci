@@ -32,47 +32,47 @@
     <div id="map" class="map" role="region" aria-label="Deprem haritası"></div>
 
     <aside class="panel" aria-labelledby="list-title">
-      <div class="overview">
-        <h2 id="list-title"><span id="count">0</span> deprem <span class="muted" id="window-label">son 24 saatte</span></h2>
-        <button type="button" class="biggest" id="biggest" hidden></button>
-      </div>
-
+      <h2 id="list-title" class="sr-only">Deprem listesi</h2>
       <div class="controls">
         <label class="search">
           <span class="sr-only">Yer ara</span>
           <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input type="search" id="search" placeholder="Yer ara: il, ilçe… (ör. Manisa)" autocomplete="off" spellcheck="false">
-          <kbd aria-hidden="true">/</kbd>
+          <input type="search" id="search" placeholder="Yer ara (ör. Manisa)" autocomplete="off" spellcheck="false">
         </label>
 
-        <div class="filter" id="f-hours" role="group" aria-labelledby="l-hours">
-          <span id="l-hours">Zaman</span>
-          <button type="button" data-v="1" aria-pressed="false">1 saat</button>
-          <button type="button" data-v="24" aria-pressed="true">24 saat</button>
-          <button type="button" data-v="168" aria-pressed="false">7 gün</button>
+        <div class="selects">
+          <label><span class="sr-only">Zaman aralığı</span>
+            <select id="f-hours">
+              <option value="1">1 saat</option>
+              <option value="24" selected>24 saat</option>
+              <option value="168">7 gün</option>
+            </select>
+          </label>
+          <label><span class="sr-only">En az büyüklük</span>
+            <select id="f-mag">
+              <option value="0" selected>Her büyüklük</option>
+              <option value="2">2 ve üstü</option>
+              <option value="3">3 ve üstü</option>
+              <option value="4">4 ve üstü</option>
+            </select>
+          </label>
+          <label><span class="sr-only">Sıralama</span>
+            <select id="f-sort">
+              <option value="time" selected>En yeni</option>
+              <option value="mag">En büyük</option>
+            </select>
+          </label>
         </div>
 
-        <div class="filter" id="f-mag" role="group" aria-labelledby="l-mag">
-          <span id="l-mag">Büyüklük</span>
-          <button type="button" data-v="0" aria-pressed="true">Tümü</button>
-          <button type="button" data-v="2" aria-pressed="false">2+</button>
-          <button type="button" data-v="3" aria-pressed="false">3+</button>
-          <button type="button" data-v="4" aria-pressed="false">4+</button>
-        </div>
-
-        <div class="filter" id="f-sort" role="group" aria-labelledby="l-sort">
-          <span id="l-sort">Sırala</span>
-          <button type="button" data-v="time" aria-pressed="true">En yeni</button>
-          <button type="button" data-v="mag" aria-pressed="false">En büyük</button>
-        </div>
+        <p class="summary-line" aria-live="off">
+          <span id="count">0</span> deprem<span id="biggest-wrap" hidden> · en büyüğü <button type="button" class="biggest" id="biggest"></button></span>
+        </p>
       </div>
 
       <ul id="list" class="list" tabindex="-1" aria-live="polite" aria-relevant="additions"></ul>
       <p id="empty" class="empty" hidden></p>
 
-      <p class="credits">
-        Veri: AFAD, Kandilli Rasathanesi, EMSC · Saatler Türkiye saatiyle.
-      </p>
+      <p class="credits">Veri: AFAD, Kandilli, EMSC · Türkiye saati</p>
     </aside>
   </main>
 
