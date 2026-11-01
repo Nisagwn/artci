@@ -399,8 +399,15 @@ Tek sunucu, Docker Compose, Caddy ile otomatik TLS:
 
 ```sh
 cp deploy/.env.example deploy/.env      # alan adı, parolalar, isteğe bağlı Telegram/LLM anahtarları
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+make up    # = docker build -t artci:latest . && docker compose ... up -d --no-build --wait
 ```
+
+İmaj bir kez derlenir, sonra yığın `--no-build` ile başlar: yedi servis aynı
+`artci:latest` imajını paylaştığı için `up --build` onları eşzamanlı derler
+ve Docker Desktop'ta "image already exists" hatasıyla düşebilir.
+
+Yerelde denemek için `ARTCI_DOMAIN=localhost` yeterli: Caddy kendi yerel
+sertifikasıyla https://localhost üzerinden sunar.
 
 Dışarıya yalnızca 80/443 açılır. Grafana ve Prometheus yalnızca sunucuda
 dinler: `ssh -L 3000:localhost:3000 sunucu` → http://localhost:3000.

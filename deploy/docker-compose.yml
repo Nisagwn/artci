@@ -1,7 +1,11 @@
 # Canlı kurulum (Plan §14, §16 gün 21): tek sunucuda tüm hat.
 #
 #   cp deploy/.env.example deploy/.env   # alan adı, parolalar, anahtarlar
-#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#   docker build -t artci:latest .       # imaj bir kez (make up ikisini birden yapar)
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --no-build --wait
+#
+# Uygulama servisleri aynı artci:latest imajını paylaşır; `up --build` onları
+# eşzamanlı derler ve Docker Desktop'ta "image already exists" ile düşebilir.
 #
 # Dışarıya yalnızca Caddy (80/443) açılır. Grafana ve Prometheus yalnızca
 # sunucunun kendisinden erişilebilir (SSH tüneli: ssh -L 3000:localhost:3000 ...).
