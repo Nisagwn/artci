@@ -26,43 +26,189 @@ Kullanıcı bunu **bir** deprem olarak görmeli, **bir** bildirim almalı. Artç
 dizisinde ise saniyeler arayla gerçekten birden çok deprem olur; bunlar
 birleştirilmemeli.
 
-## Mimari
+## Sistem mimarisi
+
+Artçı birbirinden bağımsız küçük Go servislerinden oluşur. Servisler birbirini
+doğrudan çağırmaz; aralarındaki tek bağ iki Redis akışı ve ortak PostgreSQL
+veritabanıdır. Böylece bir kaynak ya da servis çökünce diğerleri çalışmaya devam eder.
+
+### Genel bakış
 
 ```mermaid
 flowchart LR
-    subgraph IN["Toplayıcılar (cmd/ingest)"]
-        E[emsc<br/>WebSocket + FDSN]
-        A[afad<br/>polling]
-        K[kandilli<br/>polling + parse]
+    subgraph SRC["Dış kaynaklar"]
+        AFADs[AFAD apiv2]
+        KOERI[Kandilli lst0.asp]
+        EMSCs[EMSC SeismicPortal]
     end
 
-    E & A & K -->|normalize| RS[(Redis Streams<br/>reports.raw)]
-    E & A & K -. bozuk kayıt .-> DLQ[(reports.dlq)]
-
-    RS --> M[merger<br/>tekilleştirme]
-    M --> PG[(PostgreSQL + PostGIS)]
-    M --> EV[(Redis Streams<br/>events.updated)]
-
-    EV --> N[notifier<br/>Telegram]
-    EV --> S[summarizer<br/>gerçekler + LLM + doğrulayıcı]
-    EV --> W[api<br/>REST + WebSocket]
-    S --> PG
-    N --> PG
-    W --> MAP[Leaflet harita]
-
-    subgraph OBS["Gözlem"]
-        P[Prometheus] --> G[Grafana]
+    subgraph IN["Toplayıcılar (cmd/ingest, kaynak başına ayrı süreç)"]
+        A[ingest afad<br/>30 sn polling]
+        K[ingest kandilli<br/>30 sn polling + windows-1254]
+        E[ingest emsc<br/>WebSocket + FDSN boşluk doldurma]
     end
+
+    AFADs --> A
+    KOERI --> K
+    EMSCs --> E
+
+    A & K & E -->|"normalize.Report"| RS[(reports.raw)]
+    A & K & E -. bozuk kayıt .-> DLQ[(reports.dlq)]
+
+    RS -->|grup: merger| M[merger<br/>tekilleştirme]
+    M <-->|tek transaction| PG[(PostgreSQL + PostGIS)]
+    M -->|"yeni/değişen olay"| EV[(events.updated)]
+
+    EV -->|grup: notifier| N[notifier]
+    EV -->|grup: summarizer| S[summarizer]
+    EV -->|"grup: api-&lt;host&gt;"| W[api]
+
+    N <--> PG
+    S <--> PG
+    W <--> PG
+    N --> TG[Telegram Bot API]
+    S --> LLM[LLM sağlayıcısı<br/>isteğe bağlı]
+    W -->|REST + WebSocket| MAP[Leaflet harita]
 ```
 
-| Servis | Görevi |
-|---|---|
-| `ingest --source=afad\|kandilli\|emsc` | Kaynağı okur, ortak `Report` biçimine çevirir, `reports.raw`'a yazar. Backoff + jitter, kaynak başına circuit breaker; EMSC'de kopunca yeniden bağlanma ve FDSN ile boşluk doldurma. Bozuk kayıt hattı durdurmaz, DLQ'ya gider. |
-| `merger` | Raporu mevcut olaylarla eşleştirir; bağlar ya da yeni olay açar. Tek tüketici (bkz. "Neden tek merger?"). |
-| `notifier` | Etkilenen aboneleri `ST_DWithin` ile bulur; Telegram hız sınırlarına uyarak gönderir. |
-| `summarizer` | M ≥ 3,5 olaylar için özet yazar. Sayıları kod üretir, model yalnızca cümle kurar, doğrulayıcı her sayıyı denetler. |
-| `api` | REST + WebSocket, gömülü Leaflet harita. |
-| `replay` | Bir deprem dizisini hızlandırarak oynatıp doğruluk ve gecikmeyi ölçer. |
+| Servis | Okur | Yazar | Görevi |
+|---|---|---|---|
+| `ingest -source=afad\|kandilli\|emsc` | kaynak | `reports.raw`, `reports.dlq` | Kaynağı ortak `Report` biçimine çevirir. Backoff + full jitter, kaynak başına circuit breaker; EMSC'de kopunca yeniden bağlanma ve kopma anından itibaren FDSN ile boşluk doldurma. Bozuk kayıt hattı durdurmaz, DLQ'ya gider. |
+| `merger` | `reports.raw` | `reports`, `events`, `events.updated` | Raporu mevcut olaylarla eşleştirir; bağlar ya da yeni olay açar. Tek tüketici (bkz. [Neden tek merger?](#neden-tek-merger)). |
+| `notifier` | `events.updated`, `subscriptions` | `notifications`, Telegram | Etkilenen aboneleri `ST_DWithin` ile bulur; Telegram hız sınırlarına uyarak gönderir. Aynı olay için ikinci bildirimi birincil anahtar engeller. |
+| `summarizer` | `events.updated` | `summaries`, `llm_spend` | M ≥ 3,5 olaylar için özet yazar. Sayıları kod üretir, model yalnızca cümle kurar, doğrulayıcı her sayıyı denetler. |
+| `api` | `events`, `events.updated` | WebSocket istemcileri | REST + WebSocket, gömülü Leaflet harita. |
+| `replay` | katalog (JSONL), ISC bülteni | `reports.raw` | Sentetik ya da gerçek (ISC) bir deprem dizisini hızlandırarak oynatıp doğruluk ve gecikmeyi ölçer. |
+
+### Bir raporun yolculuğu
+
+Aynı depremin iki kaynaktan gelmesi:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant K as ingest kandilli
+    participant A as ingest afad
+    participant R as Redis reports.raw
+    participant M as merger
+    participant DB as PostgreSQL
+    participant E as Redis events.updated
+    participant N as notifier / summarizer / api
+
+    K->>R: XADD Report (kandilli, 15:04:30, M4,3)
+    R->>M: XREADGROUP merger
+    M->>DB: BEGIN · upsert reports · aday yok → events INSERT (v1) · COMMIT
+    M->>E: XADD event v1
+    M->>R: XACK
+    E->>N: her grup kendi kopyasını alır
+    N-->>N: bildirim gönderilir · harita güncellenir
+
+    A->>R: XADD Report (afad, 15:04:31, M4,1)
+    R->>M: XREADGROUP merger
+    M->>DB: BEGIN · upsert · aday: v1 olayı, puan ≈ 0,90 → bağla<br/>gösterilen değerler AFAD'a geçer → v2 · COMMIT
+    M->>E: XADD event v2
+    M->>R: XACK
+    E->>N: aynı olay, yeni sürüm
+    N-->>N: büyüklük farkı 0,2 < 0,5 → ikinci bildirim yok · harita ve özet güncellenir
+```
+
+1. **Toplama.** Her toplayıcı kendi kaynağını okur, saat dilimini UTC'ye
+   çevirir (Kandilli TRT, AFAD UTC ama eksiz), büyüklük türünü seçer ve
+   `reports.raw` akışına yazar. Daha önce aynı hâliyle gördüğü kaydı yeniden yazmaz.
+2. **Tekilleştirme.** `merger` raporu `(source, source_event_id)` ile upsert
+   eder. Rapor yeniyse ±10 sn ve 50 km içindeki olaylar arasından en iyi
+   puanlıyı arar; bağlar ya da yeni olay açar. Olayın gösterilen değerleri
+   kaynak önceliğine göre yeniden hesaplanır, değiştiyse `version` artar.
+3. **Yayın.** Değişen olay `events.updated` akışına yazılır. DB commit'i ile
+   yayın arasında çökme olursa `events.published_version` eksik yayını
+   sonradan tamamlar (küçük bir outbox).
+4. **Tüketim.** Her tüketici kendi consumer group'uyla akışın tamamını alır:
+   `notifier` bildirir, `summarizer` özet yazar, `api` haritadaki istemcilere iter.
+
+### Akışlar
+
+| Akış | Yazan | Tüketici grupları | Teslim |
+|---|---|---|---|
+| `reports.raw` | `ingest`, `replay` | `merger` | at-least-once; tekrar gelen mesaj upsert'te no-op olur |
+| `reports.dlq` | `ingest` | — (inceleme için) | ayrıştırılamayan ham kayıt + neden |
+| `events.updated` | `merger` | `notifier`, `summarizer`, `api-<host>` | at-least-once; tüketiciler `(event_id, version)` ile idempotent |
+
+Akışlar `MAXLEN ≈ 100 000` ile sınırlıdır. Çöken bir tüketicinin onaylamadığı
+mesajlar açılışta bekleyenler listesinden yeniden işlenir. `api` grubu `$`'dan
+açılır: harita yalnızca canlı akışı ister, geçmişi REST'ten alır.
+
+### Veri modeli
+
+```mermaid
+erDiagram
+    events ||--o{ reports : "birleştirir"
+    events ||--o{ notifications : ""
+    events ||--o{ summaries : "sürüm başına"
+    subscriptions ||--o{ notifications : ""
+
+    events {
+        uuid id PK
+        timestamptz origin_time
+        geography location "GIST"
+        numeric magnitude
+        int version "her değişiklikte +1"
+        int published_version "outbox"
+    }
+    reports {
+        bigserial id PK
+        text source "UNIQUE(source, source_event_id)"
+        text source_event_id
+        timestamptz origin_time
+        geography location
+        jsonb raw "kaynağın orijinal kaydı"
+        uuid event_id FK
+    }
+    subscriptions {
+        bigserial id PK
+        bigint chat_id
+        geography center "il merkezi, kişisel konum değil"
+        int radius_km
+        numeric min_mag
+    }
+    notifications {
+        uuid event_id PK
+        bigint subscription_id PK
+        text kind "initial | update"
+    }
+    summaries {
+        uuid event_id PK
+        int event_version PK
+        text generator "llm:model | template"
+        bool validated
+    }
+```
+
+Her rapor `raw` alanında kaynağın orijinal kaydını saklar; tekilleştirme
+kararı sonradan yeniden incelenebilir. `llm_spend` günlük LLM harcamasını tutar
+(tavan dolunca şablona düşülür).
+
+### Kurulum topolojisi
+
+```mermaid
+flowchart LR
+    U[Kullanıcı] -->|443 TLS| C[Caddy<br/>Let's Encrypt]
+    C --> API[api :8080]
+    subgraph HOST["Tek sunucu, Docker Compose"]
+        C
+        API
+        I1[ingest-afad] & I2[ingest-kandilli] & I3[ingest-emsc] & MG[merger] & NT[notifier] & SM[summarizer]
+        PG[(postgres<br/>PostGIS 16)]
+        RD[(redis 7<br/>AOF)]
+        PR[Prometheus] --> GF[Grafana]
+    end
+    PR -. kazır /metrics .-> API & I1 & I2 & I3 & MG & NT & SM
+    ADM[Yönetici] -->|SSH tüneli| GF
+```
+
+Tek bir imaj (`artci:latest`) tüm servisleri içerir; her servis Compose'da
+farklı komutla başlar. Dışarıya yalnızca Caddy (80/443) açılır; Prometheus ve
+Grafana yalnızca `127.0.0.1`'de dinler. Redis AOF ile kalıcıdır, böylece
+yeniden başlatmada akışlardaki onaylanmamış mesajlar kaybolmaz.
 
 ## Tekilleştirme
 
@@ -82,18 +228,35 @@ aday oluyordu: yanlış birleşen çiftlerin medyan zaman farkı 8 sn, doğru
 çiftlerinki 0,9 sn idi. 217 eşik bileşimini iki gürültü düzeyinde taradım ve
 yalnızca bir gürültü düzeyine iyi oturanı değil, ikisinde de sağlam olanı seçtim.
 
-| Eşikler | F1 | F1 (2× gürültü) |
-|---|---|---|
-| Plan §8: 60 sn / 100 km / 0,6 | 0,847 | 0,851 |
-| **Seçilen: 10 sn / 50 km / 0,5** | **0,959** | **0,954** |
+Sonra seçimi **gerçek** bir diziyle doğruladım: 10 Ağustos 2025 Sındırgı
+(Mw 6,1) depreminin ilk 7 günü, [ISC bülteninden](http://www.isc.ac.uk/iscbulletin/)
+AFAD ve Kandilli'nin kendi çözümleri (4201 deprem, 6949 rapor). ISC her
+depremi tek olayda topladığı için hangi raporun hangi depreme ait olduğu
+bağımsız olarak biliniyor.
 
-> ⚠️ Ayar **sentetik** bir diziyle yapıldı: kaynakların gerçek kataloglarına
-> geliştirme ortamından erişilemedi. Sentetik dizide her raporun hangi depreme
-> ait olduğu bilindiği için doğruluk kesin ölçülür; ama kaynaklar arası
-> farkların dağılımı benim varsayımım. Gerçek bir katalogla yeniden doğrulanmalı.
-> Ayrıntı: [docs/MATCHING.md → Eşiklerin ayarı](docs/MATCHING.md#eşiklerin-ayarı).
+| Eşikler | F1 sentetik | F1 sentetik (2× gürültü) | **F1 gerçek dizi** |
+|---|---|---|---|
+| Plan §8: 60 sn / 100 km / 0,6 | 0,847 | 0,851 | 0,944 |
+| **Seçilen: 10 sn / 50 km / 0,5** | **0,959** | **0,954** | **0,986** |
+
+Gerçek dizide seçilen eşikler 72 bileşimin en iyisinden yalnızca 0,0007
+geride; değiştirmedim. Kalan hatanın çoğu doğru cevabın kendisinden: ISC'nin
+otomatik gruplamasında 45 çift 10 sn / 50 km'den uzak, bu yüzden ulaşılabilir
+recall ≈ 0,984 (ölçülen 0,981). Ayrıntı:
+[docs/MATCHING.md → Gerçek dizide doğrulama](docs/MATCHING.md#gerçek-dizide-doğrulama).
+
+> EMSC çözümleri ISC bülteninde yok; gerçek veri doğrulaması iki kaynaklıdır.
 
 ## Ölçüm sonuçları
+
+**Gerçek dizi** (Sındırgı 2025, ilk 7 gün, ISC: AFAD + Kandilli; bellek içi merger, üç varış sırası):
+
+| Ölçüm | Sonuç |
+|---|---|
+| Birleştirme precision / recall / F1 | **0,991 / 0,981 / 0,986** |
+| Tam doğru birleştirilen deprem | %98,2 (4201 depremden) |
+
+**Sentetik dizi** (gecikme ve iş hacmi ölçümleri için):
 
 Sentetik Sındırgı dizisi (M6,1 + 24 saatte 400 artçı → 478 rapor, 262
 gerçek deprem), yerel PostGIS + Redis, tek merger:
@@ -125,8 +288,13 @@ go run ./cmd/merger &                                   # yerel PostGIS + Redis 
 go run ./cmd/replay run -in /tmp/sindirgi.jsonl -speed 10 -cleanup
 ```
 
+Gerçek dizi kataloğu repoda: [`testdata/replay/sindirgi-isc-2025-08.jsonl.gz`](testdata/replay/sindirgi-isc-2025-08.jsonl.gz)
+(`go run ./cmd/replay isc` ile yeniden üretilir) ve her `go test`'te
+oynatılır; doğruluk F1 0,98'in altına düşerse test kırılır.
+
 Gerçek bir afetin verisini kullanırken bunu saygıyla ve yalnızca mühendislik
-amacıyla yapıyorum; sentetik dizi Sındırgı'nın yalnızca konumunu ve büyüklüğünü kullanır.
+amacıyla yapıyorum. Kullanılan yalnızca kurumların yayımladığı deprem
+parametreleridir (zaman, konum, büyüklük).
 
 ## Güvenilirlik
 
@@ -215,7 +383,8 @@ go test ./...                                                   # birim
 ARTCI_TEST_POSTGRES_DSN=postgres://artci:artci@localhost:5432/artci?sslmode=disable \
   go test ./...                                                 # + PostGIS entegrasyon
 go test ./internal/summary -run RedTeam -v                      # red-team
-ARTCI_SWEEP=1 go test ./internal/merger -run Sweep -v           # eşik taraması
+ARTCI_SWEEP=1 go test ./internal/merger -run 'Sweep$' -v        # eşik taraması, sentetik
+ARTCI_SWEEP=1 go test ./internal/merger -run SweepReal -v       # eşik taraması, gerçek dizi (~2 dk)
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): gofmt, vet,
@@ -245,9 +414,11 @@ dinler: `ssh -L 3000:localhost:3000 sunucu` → http://localhost:3000.
 İsteklerde iletişim bilgili açık bir `User-Agent` gönderilir
 (`ARTCI_USER_AGENT`). Her olayda verinin hangi kurumlardan geldiği gösterilir.
 
-> ⚠️ Ayrıştırıcı testlerinin girdileri ([`testdata/source`](testdata/source/README.md))
-> kaynakların bilinen biçimine göre elle hazırlandı; geliştirme ortamının bu
-> adreslere erişimi yoktu. Gerçek yanıtlarla değiştirilmeli.
+Ayrıştırıcılar elle hazırlanmış girdilerin (bozuk kayıt senaryoları) yanında
+31.10.2026'da kaynaklardan çekilmiş **gerçek** yanıtlarla da sınanır
+([`testdata/source/real`](testdata/source/README.md)). Aynı depremin üç
+kaynakta aynı UTC anına düştüğü test edilir: AFAD saatleri UTC ama eksiz,
+Kandilli `lst0.asp` Türkiye saati (UTC+3).
 
 ## Etik ve sorumluluk
 
@@ -270,10 +441,10 @@ internal/
   stream/     Redis Streams (at-least-once)
   notify/     Telegram botu ve bildirim kararları
   summary/    gerçekler, şablon, LLM, doğrulayıcı
-  replay/     sentetik dizi, doğruluk ve yüzdelik hesapları
+  replay/     sentetik dizi, ISC'den gerçek dizi, doğruluk ve yüzdelik hesapları
   geo/ api/ metrics/ app/
 migrations/   SQL göçleri (servislere gömülü)
-testdata/     ayrıştırıcı girdileri, red-team, eşleştirme örnekleri
+testdata/     ayrıştırıcı girdileri (gerçek + elle), red-team, replay katalogları
 web/          Leaflet harita (api'ye gömülü)
 deploy/       compose (dev + canlı), Caddyfile, Prometheus, Grafana
 ```
