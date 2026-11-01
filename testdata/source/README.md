@@ -16,3 +16,22 @@ curl -A "artci (iletisim: ...)" 'https://www.seismicportal.eu/fdsnws/event/1/que
 
 Testler, bilerek bozuk bırakılmış kayıtlara (DLQ'ya gitmesi gereken) dayanır;
 gerçek yanıtlarla değiştirirken bu satırlar korunmalı.
+
+## real/
+
+31.10.2026'da kaynaklardan çekilmiş **gerçek** yanıtlar (küçültülmüş; Kandilli
+orijinal windows-1254 baytlarıyla). `internal/source/real_test.go` bunları kullanır.
+
+| Dosya | Kaynak |
+|---|---|
+| `afad_20261031.json` | AFAD apiv2, 30 kayıt |
+| `kandilli_lst0_20261031.html` | Kandilli `lst0.asp`, gece yarısı geçişi ve bir `REVIZE01` satırıyla 30 satır |
+| `emsc_fdsn_20261031.json` | EMSC FDSN, 30 kayıt |
+| `emsc_ws_20261031.json` | EMSC WebSocket `create` mesajı |
+
+Bu verilerle doğrulananlar:
+
+- AFAD `date` alanı saat dilimi eki taşımaz ama **UTC**'dir: AFAD `597938` ile
+  EMSC `20261031_0000259` (yazarı AFAD) aynı ana düşer.
+- Kandilli `lst0.asp` **TRT (UTC+3)** kullanır: sayfadaki 21:29:34, AFAD'da 18:29:34 UTC.
+  İngilizce `lasteq.asp` ise UTC'dir; ayrıştırıcı bu sayfa için yazılmadı.

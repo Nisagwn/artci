@@ -57,7 +57,9 @@ func decodeKandilli(body []byte) string {
 
 // preBlock, <pre>...</pre> arasını döner; etiket yoksa tüm metni.
 func preBlock(s string) string {
-	lower := strings.ToLower(s)
+	// strings.ToLower kullanılmaz: "İ" küçülünce 2 bayttan 3 bayta çıkar ve
+	// lower'daki konumlar s'ye uymaz (gerçek sayfada tablonun sonu kesiliyordu).
+	lower := asciiLower(s)
 	i := strings.Index(lower, "<pre")
 	if i < 0 {
 		return s
@@ -69,6 +71,17 @@ func preBlock(s string) string {
 		return s[i : i+k]
 	}
 	return s[i:]
+}
+
+// asciiLower yalnızca A-Z'yi küçültür; bayt uzunluğu değişmez.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // ParseKandilli, sayfayı raporlara çevirir. Tarihle başlamayan satırlar
