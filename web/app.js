@@ -4,7 +4,7 @@
 'use strict';
 
 (() => {
-  const WINDOW_MS = 24 * 3600 * 1000;
+  const WINDOW_LABELS = { 1: 'son 1 saatte', 24: 'son 24 saatte', 168: 'son 7 günde' };
   const AFAD_URL = 'https://deprem.afad.gov.tr/';
   const SOURCE_NAMES = { afad: 'AFAD', kandilli: 'Kandilli', emsc: 'EMSC' };
   const TZ = 'Europe/Istanbul';
@@ -26,7 +26,36 @@
     if (min < 1) return 'az önce';
     if (min < 60) return min + ' dk önce';
     const h = Math.floor(min / 60);
-    return h + ' sa ' + (min % 60 ? (min % 60) + ' dk ' : '') + 'önce';
+    if (h < 24) return h + ' sa ' + (min % 60 ? (min % 60) + ' dk ' : '') + 'önce';
+    return Math.floor(h / 24) + ' gün önce';
+  }
+
+  // Arama Türkçe karakterden bağımsızdır: "sindirgi" Sındırgı'yı, "sarigol"
+  // Sarıgöl'ü bulur. Karakter karakter katlanır ki eşleşmenin orijinal metindeki
+  // yeri (vurgulamak için) bilinsin.
+  function foldChar(c) {
+    return c.toLocaleLowerCase('tr-TR').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+  }
+  function fold(str) {
+    let out = '';
+    for (const c of str) out += foldChar(c);
+    return out;
+  }
+  // matchRange, sorgunun metinde geçtiği [başlangıç, bitiş) aralığını döner.
+  function matchRange(text, q) {
+    let folded = '';
+    const idx = [];
+    let i = 0;
+    for (const c of text) {
+      const f = foldChar(c);
+      for (let k = 0; k < f.length; k++) idx.push(i);
+      folded += f;
+      i += c.length;
+    }
+    idx.push(i);
+    const at = folded.indexOf(q);
+    if (at < 0) return null;
+    return [idx[at], idx[at + q.length]];
   }
 
   // Yer adlarını okunur yapar: Kandilli'nin TAMAMI BÜYÜK harfli adları
@@ -35,7 +64,10 @@
     if (!name) return 'Yer bilgisi yok';
     let s = name.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s+/g, ' ').trim();
     if (s === s.toLocaleUpperCase('tr-TR')) {
-      s = s.toLocaleLowerCase('tr-TR')
+      // Kandilli adları ASCII'dir ("MANISA"): orada I, İ'nin de yerine geçer ve
+      // Türkçe küçültme "Manısa" yazardı. Türkçe büyük harf yoksa I -> i.
+      const ascii = !/[İŞĞÜÖÇ]/.test(s);
+      s = (ascii ? s.toLowerCase() : s.toLocaleLowerCase('tr-TR'))
         .replace(/(^|[\s(\-\/])(\p{L})/gu, (_, p, c) => p + c.toLocaleUpperCase('tr-TR'));
     }
     return s;
@@ -53,13 +85,18 @@
   const emptyEl = $('empty');
   const countEl = $('count');
   const biggestEl = $('biggest');
-  const filterButtons = document.querySelectorAll('.filter button');
+  const windowLabel = $('window-label');
+  const searchEl = $('search');
   const statusEl = $('status');
   const statusText = $('status-text');
 
-  // id -> { ev, marker, li, detail }
+  // id -> { ev, marker, li, detail, key }
   const entries = new Map();
   let minMag = 0;
+  let windowHours = 24;
+  let sortBy = 'time';
+  let query = '';
+  const windowMs = () => windowHours * 3600 * 1000;
 
   // ---- Harita ----
   const map = L.map('map', { center: [39.0, 35.2], zoom: 6, minZoom: 4, worldCopyJump: true });
@@ -178,8 +215,22 @@
     const depth = ev.depth_km != null ? ' · ' + num(ev.depth_km, 0) + ' km derinlik' : '';
     const meta = el('span', 'meta', ago(ev.origin_time) + depth);
     meta.title = fmtShort.format(new Date(ev.origin_time));
-    btn.append(badge(ev.magnitude), el('span', 'place', place(ev.place_name)), meta);
+    btn.append(badge(ev.magnitude), placeEl(ev), meta);
     li.dataset.t = String(Date.parse(ev.origin_time));
+    li.dataset.m = String(ev.magnitude);
+  }
+
+  // Yer adı; arama varsa eşleşen kısım <mark> ile vurgulanır (textContent ile).
+  function placeEl(ev) {
+    const name = place(ev.place_name);
+    const span = el('span', 'place');
+    const r = query ? matchRange(name, query) : null;
+    if (!r) {
+      span.textContent = name;
+      return span;
+    }
+    span.append(name.slice(0, r[0]), el('mark', null, name.slice(r[0], r[1])), name.slice(r[1]));
+    return span;
   }
 
   function createItem(entry) {
@@ -192,15 +243,26 @@
     return li;
   }
 
-  // Liste en yeniden eskiye sıralı tutulur; yeni öğe doğru yere eklenir ki
-  // ekran okuyucu yalnızca gerçekten yeni olanı duyursun.
+  // Liste seçilen sıraya göre (en yeni ya da en büyük) tutulur; yeni öğe doğru
+  // yere eklenir ki ekran okuyucu yalnızca gerçekten yeni olanı duyursun.
+  function comesBefore(a, b) {
+    if (sortBy === 'mag') {
+      const d = Number(a.dataset.m) - Number(b.dataset.m);
+      if (d !== 0) return d > 0;
+    }
+    return Number(a.dataset.t) > Number(b.dataset.t);
+  }
   function placeItem(li) {
-    const t = Number(li.dataset.t);
     let before = null;
     for (const other of listEl.children) {
-      if (other !== li && Number(other.dataset.t) < t) { before = other; break; }
+      if (other !== li && comesBefore(li, other)) { before = other; break; }
     }
     if (li.nextSibling !== before || li.parentNode !== listEl) listEl.insertBefore(li, before);
+  }
+  function sortAll() {
+    const items = [...listEl.children];
+    items.sort((a, b) => (comesBefore(a, b) ? -1 : comesBefore(b, a) ? 1 : 0));
+    listEl.append(...items);
   }
 
   function focusEntry(entry) {
@@ -209,10 +271,15 @@
   }
 
   // ---- Durum ----
-  function visible(ev) { return ev.magnitude >= minMag; }
+  function matches(entry) {
+    if (!query) return true;
+    if (entry.key == null) entry.key = fold(place(entry.ev.place_name) + ' ' + (entry.ev.place_name || ''));
+    return entry.key.includes(query);
+  }
+  function visibleEntry(entry) { return entry.ev.magnitude >= minMag && matches(entry); }
 
   function applyVisibility(entry) {
-    const show = visible(entry.ev);
+    const show = visibleEntry(entry);
     entry.li.hidden = !show;
     if (show && !layer.hasLayer(entry.marker)) layer.addLayer(entry.marker);
     if (!show && layer.hasLayer(entry.marker)) layer.removeLayer(entry.marker);
@@ -223,12 +290,16 @@
     let n = 0;
     biggest = null;
     for (const e of entries.values()) {
-      if (!visible(e.ev)) continue;
+      if (!visibleEntry(e)) continue;
       n++;
       if (!biggest || e.ev.magnitude > biggest.ev.magnitude) biggest = e;
     }
     countEl.textContent = String(n);
+    windowLabel.textContent = WINDOW_LABELS[windowHours] + (query ? ' · “' + searchEl.value.trim() + '”' : '');
     emptyEl.hidden = n > 0;
+    emptyEl.textContent = query
+      ? 'Aramanızla eşleşen deprem yok. Zaman aralığını genişletmeyi deneyin.'
+      : 'Bu filtrelerle ' + WINDOW_LABELS[windowHours] + ' deprem yok.';
     biggestEl.hidden = !biggest;
     if (biggest) {
       const text = el('span');
@@ -248,7 +319,7 @@
   function highlight(entry, isNew) {
     entry.li.classList.add('fresh');
     setTimeout(() => entry.li.classList.remove('fresh'), 4000);
-    if (!isNew || !visible(entry.ev)) return;
+    if (!isNew || !visibleEntry(entry)) return;
     // Yeni olay: tek seferlik, sönerek genişleyen halka (yanıp sönme değil).
     const ring = L.circleMarker([entry.ev.lat, entry.ev.lon], {
       ...markerStyle(entry.ev), fillOpacity: 0, weight: 2, className: 'ring', interactive: false,
@@ -267,7 +338,7 @@
   // upsert, olayı ekler ya da yerinde günceller. Sürüm karşılaştırması şart:
   // REST yanıtı ile WebSocket mesajları farklı sırada gelebilir.
   function upsert(ev, live) {
-    if (Date.now() - Date.parse(ev.origin_time) > WINDOW_MS) {
+    if (Date.now() - Date.parse(ev.origin_time) > windowMs()) {
       removeEntry(ev.id);
       return;
     }
@@ -277,6 +348,7 @@
       const changed = ev.version > entry.ev.version;
       // WS mesajında özet yok; eldekini koru.
       entry.ev = { ...ev, summary: ev.summary ?? entry.ev.summary };
+      entry.key = null;
       if (changed) entry.detail = null;
       entry.marker.setLatLng([ev.lat, ev.lon]);
       entry.marker.setStyle(markerStyle(ev));
@@ -315,29 +387,81 @@
   }
 
   function prune() {
-    const cutoff = Date.now() - WINDOW_MS;
+    const cutoff = Date.now() - windowMs();
     quietly(() => {
       for (const [id, e] of entries) if (Date.parse(e.ev.origin_time) < cutoff) removeEntry(id);
     });
   }
   setInterval(() => { prune(); refreshTimes(); }, 60 * 1000);
 
-  for (const b of filterButtons) {
-    b.addEventListener('click', () => {
-      minMag = Number(b.dataset.min) || 0;
-      for (const o of filterButtons) o.setAttribute('aria-pressed', String(o === b));
-      quietly(() => { for (const e of entries.values()) applyVisibility(e); });
-    });
+  // Düğme grubu: tıklanan düğme seçili olur, değeri onChange'e verilir.
+  function chips(id, onChange) {
+    const buttons = document.querySelectorAll('#' + id + ' button');
+    for (const b of buttons) {
+      b.addEventListener('click', () => {
+        for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
+        onChange(b.dataset.v);
+      });
+    }
   }
+  const refilter = () => quietly(() => { for (const e of entries.values()) applyVisibility(e); });
+
+  chips('f-mag', (v) => { minMag = Number(v) || 0; refilter(); });
+  chips('f-sort', (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });
+  chips('f-hours', (v) => {
+    windowHours = Number(v) || 24;
+    prune();
+    loadRecent().catch(() => setStatus('degraded', 'Liste yüklenemedi'));
+  });
+
+  // Arama: yazarken süzülür; eşleşme varsa harita sonuçlara yaklaşır.
+  let searchTimer = null;
+  function runSearch() {
+    query = fold(searchEl.value.trim());
+    quietly(() => {
+      for (const e of entries.values()) {
+        applyVisibility(e);
+        fillItem(e.li, e.ev);
+      }
+    });
+    if (!query) return;
+    const pts = [];
+    for (const e of entries.values()) if (visibleEntry(e)) pts.push([e.ev.lat, e.ev.lon]);
+    if (pts.length) map.flyToBounds(pts, { maxZoom: 9, padding: [40, 40], duration: 0.6 });
+  }
+  searchEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 200);
+  });
+  searchEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { searchEl.value = ''; runSearch(); }
+    if (e.key === 'Enter') {
+      clearTimeout(searchTimer);
+      runSearch();
+      const first = [...listEl.children].find((li) => !li.hidden);
+      if (first) first.firstChild.focus();
+    }
+  });
+  // "/" ile aramaya geç (başka bir alana yazılmıyorsa).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== searchEl &&
+        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      searchEl.focus();
+    }
+  });
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     for (const e of entries.values()) e.marker.setStyle(markerStyle(e.ev));
   });
 
   async function loadRecent() {
-    const res = await fetch('/api/events?hours=24');
+    const hours = windowHours;
+    const res = await fetch('/api/events?limit=2000&hours=' + hours);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const body = await res.json();
+    // Bu arada başka bir zaman aralığı seçildiyse eski yanıtı atla.
+    if (hours !== windowHours) return;
     quietly(() => { for (const ev of body.events) upsert(ev, false); });
   }
 

@@ -33,20 +33,42 @@
 
     <aside class="panel" aria-labelledby="list-title">
       <div class="overview">
-        <h2 id="list-title"><span id="count">0</span> deprem <span class="muted">son 24 saatte</span></h2>
+        <h2 id="list-title"><span id="count">0</span> deprem <span class="muted" id="window-label">son 24 saatte</span></h2>
         <button type="button" class="biggest" id="biggest" hidden></button>
       </div>
 
-      <div class="filter" role="group" aria-labelledby="filter-label">
-        <span id="filter-label">Büyüklük</span>
-        <button type="button" data-min="0" aria-pressed="true">Tümü</button>
-        <button type="button" data-min="2" aria-pressed="false">2+</button>
-        <button type="button" data-min="3" aria-pressed="false">3+</button>
-        <button type="button" data-min="4" aria-pressed="false">4+</button>
+      <div class="controls">
+        <label class="search">
+          <span class="sr-only">Yer ara</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input type="search" id="search" placeholder="Yer ara: il, ilçe… (ör. Manisa)" autocomplete="off" spellcheck="false">
+          <kbd aria-hidden="true">/</kbd>
+        </label>
+
+        <div class="filter" id="f-hours" role="group" aria-labelledby="l-hours">
+          <span id="l-hours">Zaman</span>
+          <button type="button" data-v="1" aria-pressed="false">1 saat</button>
+          <button type="button" data-v="24" aria-pressed="true">24 saat</button>
+          <button type="button" data-v="168" aria-pressed="false">7 gün</button>
+        </div>
+
+        <div class="filter" id="f-mag" role="group" aria-labelledby="l-mag">
+          <span id="l-mag">Büyüklük</span>
+          <button type="button" data-v="0" aria-pressed="true">Tümü</button>
+          <button type="button" data-v="2" aria-pressed="false">2+</button>
+          <button type="button" data-v="3" aria-pressed="false">3+</button>
+          <button type="button" data-v="4" aria-pressed="false">4+</button>
+        </div>
+
+        <div class="filter" id="f-sort" role="group" aria-labelledby="l-sort">
+          <span id="l-sort">Sırala</span>
+          <button type="button" data-v="time" aria-pressed="true">En yeni</button>
+          <button type="button" data-v="mag" aria-pressed="false">En büyük</button>
+        </div>
       </div>
 
       <ul id="list" class="list" tabindex="-1" aria-live="polite" aria-relevant="additions"></ul>
-      <p id="empty" class="empty" hidden>Bu büyüklükte son 24 saatte deprem yok.</p>
+      <p id="empty" class="empty" hidden></p>
 
       <p class="credits">
         Veri: AFAD, Kandilli Rasathanesi, EMSC · Saatler Türkiye saatiyle.
