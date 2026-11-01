@@ -82,8 +82,8 @@ replay-real: ## Gerçek Sındırgı 2025 dizisini (ISC) beklemeden oynat (merger
 docker-build: ## İmajı derle (artci:latest)
 	docker build -t artci:latest .
 
-up: ## Üretim yığınını başlat (deploy/.env gerekir)
-	$(PROD) up -d --build
+up: docker-build ## Üretim yığınını başlat (deploy/.env gerekir; imaj bir kez derlenir)
+	$(PROD) up -d --no-build --wait
 
 down: ## Üretim yığınını durdur
 	$(PROD) down
