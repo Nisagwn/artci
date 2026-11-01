@@ -13,41 +13,41 @@
 <body>
   <a class="skip" href="#list">Deprem listesine geç</a>
 
-  <div class="notice" role="note">
-    <strong>Artçı bir eğitim projesidir; resmî bir uyarı sistemi değildir.</strong>
-    Resmî bilgi için <a href="https://deprem.afad.gov.tr/" rel="noopener" target="_blank">AFAD</a>'ı takip edin.
-  </div>
-
   <header class="bar">
-    <h1>Artçı <span class="sub">son 24 saatin depremleri</span></h1>
+    <div class="brand">
+      <h1>Artçı</h1>
+      <p class="sub">Türkiye ve çevresindeki son depremler</p>
+    </div>
     <p class="status" id="status" role="status" data-state="connecting">
       <span class="dot" aria-hidden="true"></span><span id="status-text">Bağlanıyor…</span>
     </p>
   </header>
 
+  <div class="notice" role="note">
+    <strong>Artçı bir eğitim projesidir; resmî bir uyarı sistemi değildir.</strong>
+    Resmî bilgi için <a href="https://deprem.afad.gov.tr/" rel="noopener" target="_blank">AFAD</a>'ı takip edin.
+  </div>
+
   <main class="layout">
     <div id="map" class="map" role="region" aria-label="Deprem haritası"></div>
 
     <aside class="panel" aria-labelledby="list-title">
-      <div class="panel-head">
-        <h2 id="list-title">Son depremler <span class="count" id="count"></span></h2>
-        <label class="filter">
-          Büyüklük
-          <select id="min-mag">
-            <option value="0">Tümü</option>
-            <option value="2">2,0 ve üzeri</option>
-            <option value="3">3,0 ve üzeri</option>
-            <option value="4">4,0 ve üzeri</option>
-            <option value="5">5,0 ve üzeri</option>
-          </select>
-        </label>
+      <div class="overview">
+        <h2 id="list-title"><span id="count">0</span> deprem <span class="muted">son 24 saatte</span></h2>
+        <button type="button" class="biggest" id="biggest" hidden></button>
       </div>
+
+      <div class="filter" role="group" aria-labelledby="filter-label">
+        <span id="filter-label">Büyüklük</span>
+        <button type="button" data-min="0" aria-pressed="true">Tümü</button>
+        <button type="button" data-min="2" aria-pressed="false">2+</button>
+        <button type="button" data-min="3" aria-pressed="false">3+</button>
+        <button type="button" data-min="4" aria-pressed="false">4+</button>
+      </div>
+
       <ul id="list" class="list" tabindex="-1" aria-live="polite" aria-relevant="additions"></ul>
-      <p id="empty" class="empty" hidden>Bu filtreyle son 24 saatte deprem yok.</p>
-      <p class="legend" aria-hidden="true">
-        <span class="sw m0"></span>&lt;3 <span class="sw m3"></span>3–4
-        <span class="sw m4"></span>4–5 <span class="sw m5"></span>5+
-      </p>
+      <p id="empty" class="empty" hidden>Bu büyüklükte son 24 saatte deprem yok.</p>
+
       <p class="credits">
         Veri: AFAD, Kandilli Rasathanesi, EMSC · Saatler Türkiye saatiyle.
       </p>

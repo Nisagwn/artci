@@ -406,8 +406,9 @@ make up    # = docker build -t artci:latest . && docker compose ... up -d --no-b
 `artci:latest` imajını paylaştığı için `up --build` onları eşzamanlı derler
 ve Docker Desktop'ta "image already exists" hatasıyla düşebilir.
 
-Yerelde denemek için `ARTCI_DOMAIN=localhost` yeterli: Caddy kendi yerel
-sertifikasıyla https://localhost üzerinden sunar.
+Yerelde denemek için `ARTCI_DOMAIN=http://localhost` kullanın: Caddy TLS'siz
+http://localhost üzerinden sunar. (`localhost` yazılırsa Caddy kendi yerel
+sertifikasını kullanır; tarayıcı ona güvenmediği için sayfa açılmaz.)
 
 Dışarıya yalnızca 80/443 açılır. Grafana ve Prometheus yalnızca sunucuda
 dinler: `ssh -L 3000:localhost:3000 sunucu` → http://localhost:3000.

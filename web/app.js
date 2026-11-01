@@ -8,6 +8,8 @@
   const AFAD_URL = 'https://deprem.afad.gov.tr/';
   const SOURCE_NAMES = { afad: 'AFAD', kandilli: 'Kandilli', emsc: 'EMSC' };
   const TZ = 'Europe/Istanbul';
+  // summarizer bu büyüklüğün altına özet yazmaz (ARTCI_SUMMARY_MIN_MAG varsayılanı).
+  const SUMMARY_MIN_MAG = 3.5;
 
   const fmtFull = new Intl.DateTimeFormat('tr-TR', {
     timeZone: TZ, day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -18,13 +20,42 @@
   const num = (n, d = 1) => Number(n).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
   const sourceName = (s) => SOURCE_NAMES[s] || s;
 
+  // "3 dk önce" gibi göreli zaman: listeyi taramayı kolaylaştırır.
+  function ago(iso) {
+    const min = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+    if (min < 1) return 'az önce';
+    if (min < 60) return min + ' dk önce';
+    const h = Math.floor(min / 60);
+    return h + ' sa ' + (min % 60 ? (min % 60) + ' dk ' : '') + 'önce';
+  }
+
+  // Yer adlarını okunur yapar: Kandilli'nin TAMAMI BÜYÜK harfli adları
+  // "Kirkagac (Manisa)" biçimine çevrilir; AFAD'ın "[35.43 km]" uzaklık eki atılır.
+  function place(name) {
+    if (!name) return 'Yer bilgisi yok';
+    let s = name.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    if (s === s.toLocaleUpperCase('tr-TR')) {
+      s = s.toLocaleLowerCase('tr-TR')
+        .replace(/(^|[\s(\-\/])(\p{L})/gu, (_, p, c) => p + c.toLocaleUpperCase('tr-TR'));
+    }
+    return s;
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
   const $ = (id) => document.getElementById(id);
   const listEl = $('list');
   const emptyEl = $('empty');
   const countEl = $('count');
+  const biggestEl = $('biggest');
+  const filterButtons = document.querySelectorAll('.filter button');
   const statusEl = $('status');
   const statusText = $('status-text');
-  const filterEl = $('min-mag');
 
   // id -> { ev, marker, li, detail }
   const entries = new Map();
@@ -32,6 +63,7 @@
 
   // ---- Harita ----
   const map = L.map('map', { center: [39.0, 35.2], zoom: 6, minZoom: 4, worldCopyJump: true });
+  // Altlık OSM; CSS ile soluk ve gri tonlu gösterilir ki depremler öne çıksın.
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları',
@@ -49,35 +81,59 @@
     return getComputedStyle(document.documentElement).getPropertyValue('--' + magClass(m)).trim();
   }
   // Büyüklük logaritmik olduğu için doğrusal yarıçap görsel olarak yeterli ayrım verir.
-  const radius = (m) => Math.max(4, 3 + m * 2.6);
+  const radius = (m) => Math.max(4, 2 + m * 3);
+  // Küçük depremler soluk kalır, büyükler belirginleşir: göz önce önemliyi görür.
   function markerStyle(ev) {
     const c = color(ev.magnitude);
-    return { radius: radius(ev.magnitude), color: c, weight: 1.5, fillColor: c, fillOpacity: 0.45 };
+    const big = ev.magnitude >= 3;
+    return { radius: radius(ev.magnitude), color: c, weight: big ? 2 : 1, fillColor: c, fillOpacity: big ? 0.6 : 0.3 };
+  }
+
+  // Lejant haritanın köşesinde: daire rengi ve boyutu ne demek.
+  const legend = L.control({ position: 'bottomleft' });
+  legend.onAdd = () => {
+    const root = el('div', 'legend');
+    root.append(el('strong', null, 'Büyüklük'));
+    const ul = el('ul');
+    for (const [m, label] of [[2, '3’ten küçük'], [3.5, '3–4'], [4.5, '4–5'], [5.5, '5+']]) {
+      const dot = el('i');
+      const d = Math.round(radius(m) * 1.4);
+      dot.style.width = dot.style.height = d + 'px';
+      dot.style.setProperty('--c', 'var(--' + magClass(m) + ')');
+      const li = el('li');
+      li.append(dot, label);
+      ul.append(li);
+    }
+    root.append(ul);
+    return root;
+  };
+  legend.addTo(map);
+
+  function badge(m, extra) {
+    const b = el('span', 'badge ' + magClass(m) + (extra ? ' ' + extra : ''));
+    b.append(el('span', 'sr-only', 'Büyüklük '), num(m));
+    return b;
   }
 
   // ---- Popup ----
-  function el(tag, cls, text) {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
-    return e;
-  }
 
   function buildPopup(entry) {
     const ev = entry.ev;
     const root = el('div', 'pop');
-    root.append(el('h3', null, ev.place_name || 'Yer bilgisi yok'));
+    const head = el('div', 'head');
+    head.append(badge(ev.magnitude, 'small'), el('h3', null, place(ev.place_name)));
+    root.append(head);
+    root.append(el('p', 'when', ago(ev.origin_time) + ' · ' + fmtFull.format(new Date(ev.origin_time))));
 
     const dl = el('dl');
     const row = (k, v) => dl.append(el('dt', null, k), el('dd', null, v));
     row('Büyüklük', num(ev.magnitude) + (ev.mag_type ? ' (' + ev.mag_type + ')' : ''));
-    row('Zaman', fmtFull.format(new Date(ev.origin_time)) + ' (TSİ)');
     row('Derinlik', ev.depth_km != null ? num(ev.depth_km) + ' km' : 'bilinmiyor');
     root.append(dl);
 
     if (ev.summary) {
       root.append(el('p', 'summary', ev.summary));
-    } else {
+    } else if (ev.magnitude >= SUMMARY_MIN_MAG) {
       root.append(el('p', 'summary pending', 'Özet hazırlanıyor.'));
     }
 
@@ -119,12 +175,10 @@
   function fillItem(li, ev) {
     const btn = li.firstChild;
     btn.replaceChildren();
-    const mag = el('span', 'mag ' + magClass(ev.magnitude));
-    mag.append(el('span', 'sr-only', 'Büyüklük '), num(ev.magnitude));
-    const meta = [fmtShort.format(new Date(ev.origin_time))];
-    if (ev.depth_km != null) meta.push(num(ev.depth_km) + ' km');
-    if (ev.sources && ev.sources.length) meta.push(ev.sources.map(sourceName).join(', '));
-    btn.append(mag, el('span', 'place', ev.place_name || 'Yer bilgisi yok'), el('span', 'meta', meta.join(' · ')));
+    const depth = ev.depth_km != null ? ' · ' + num(ev.depth_km, 0) + ' km derinlik' : '';
+    const meta = el('span', 'meta', ago(ev.origin_time) + depth);
+    meta.title = fmtShort.format(new Date(ev.origin_time));
+    btn.append(badge(ev.magnitude), el('span', 'place', place(ev.place_name)), meta);
     li.dataset.t = String(Date.parse(ev.origin_time));
   }
 
@@ -164,11 +218,31 @@
     if (!show && layer.hasLayer(entry.marker)) layer.removeLayer(entry.marker);
   }
 
+  let biggest = null;
   function updateCount() {
     let n = 0;
-    for (const e of entries.values()) if (visible(e.ev)) n++;
-    countEl.textContent = '(' + n + ')';
+    biggest = null;
+    for (const e of entries.values()) {
+      if (!visible(e.ev)) continue;
+      n++;
+      if (!biggest || e.ev.magnitude > biggest.ev.magnitude) biggest = e;
+    }
+    countEl.textContent = String(n);
     emptyEl.hidden = n > 0;
+    biggestEl.hidden = !biggest;
+    if (biggest) {
+      const text = el('span');
+      text.append(el('span', 'label', 'En büyüğü · ' + ago(biggest.ev.origin_time)),
+        el('span', 'what', place(biggest.ev.place_name)));
+      biggestEl.replaceChildren(badge(biggest.ev.magnitude, 'small'), text);
+    }
+  }
+  biggestEl.addEventListener('click', () => { if (biggest) focusEntry(biggest); });
+
+  // Göreli zamanlar ("5 dk önce") dakikada bir tazelenir.
+  function refreshTimes() {
+    for (const e of entries.values()) fillItem(e.li, e.ev);
+    updateCount();
   }
 
   function highlight(entry, isNew) {
@@ -219,6 +293,8 @@
     }
     const e = { ev: { ...ev }, detail: null };
     e.marker = L.circleMarker([ev.lat, ev.lon], markerStyle(ev));
+    // Küçük depremlerin altında büyükler kaybolmasın.
+    e.marker.on('add', () => { if (e.ev.magnitude >= 3) e.marker.bringToFront(); });
     e.marker.bindPopup(() => buildPopup(e), { maxWidth: 300 });
     e.marker.on('popupopen', () => loadDetail(e));
     e.li = createItem(e);
@@ -244,12 +320,15 @@
       for (const [id, e] of entries) if (Date.parse(e.ev.origin_time) < cutoff) removeEntry(id);
     });
   }
-  setInterval(prune, 60 * 1000);
+  setInterval(() => { prune(); refreshTimes(); }, 60 * 1000);
 
-  filterEl.addEventListener('change', () => {
-    minMag = Number(filterEl.value) || 0;
-    quietly(() => { for (const e of entries.values()) applyVisibility(e); });
-  });
+  for (const b of filterButtons) {
+    b.addEventListener('click', () => {
+      minMag = Number(b.dataset.min) || 0;
+      for (const o of filterButtons) o.setAttribute('aria-pressed', String(o === b));
+      quietly(() => { for (const e of entries.values()) applyVisibility(e); });
+    });
+  }
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     for (const e of entries.values()) e.marker.setStyle(markerStyle(e.ev));

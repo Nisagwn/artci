@@ -1,19 +1,19 @@
 /* Sakin, olgusal görsel dil: nötr yüzeyler, kırmızı/yanıp sönme yok. */
 :root {
-  --bg: #f6f7f9;
+  --bg: #f4f5f7;
   --surface: #ffffff;
   --text: #1c2430;
-  --muted: #536071;
-  --border: #d7dce3;
+  --muted: #5d6a7a;
+  --border: #e2e6eb;
   --accent: #1f5f8b;
-  --notice-bg: #fff4d6;
-  --notice-text: #4a3a00;
+  --notice-bg: #fff8e1;
+  --notice-text: #5a4600;
   --focus: #1f5f8b;
-  /* Büyüklük renkleri: soğuktan sıcağa, ama alarm kırmızısı değil. */
-  --m0: #6b8fa8;
+  /* Büyüklük renkleri: küçükler sessiz gri, büyükler sıcak; alarm kırmızısı yok. */
+  --m0: #8a9bb0;
   --m3: #2a9d8f;
-  --m4: #d4a017;
-  --m5: #b5541c;
+  --m4: #d99a00;
+  --m5: #c4501a;
   --ok: #2e7d4f;
   --warn: #9a6a00;
   color-scheme: light;
@@ -25,12 +25,12 @@
     --surface: #1b2129;
     --text: #e6eaef;
     --muted: #a3afbd;
-    --border: #2f3946;
+    --border: #2b343f;
     --accent: #7cb8e0;
-    --notice-bg: #3a3214;
-    --notice-text: #f5e7b5;
+    --notice-bg: #2e2913;
+    --notice-text: #f0e2b0;
     --focus: #7cb8e0;
-    --m0: #8fb0c6;
+    --m0: #7d8ea3;
     --m3: #4cc2b3;
     --m4: #e6b93a;
     --m5: #e07a3e;
@@ -38,8 +38,6 @@
     --warn: #e6b93a;
     color-scheme: dark;
   }
-  /* Açık karoları koyu temaya uydur; harita okunur kalsın diye hafif. */
-  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9); }
   .leaflet-container { background: #1b2129; }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--text); }
   .leaflet-control-attribution { background: rgba(27, 33, 41, .85) !important; color: var(--muted); }
@@ -57,7 +55,9 @@ body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 a { color: var(--accent); }
+button { font: inherit; color: inherit; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.muted { color: var(--muted); font-weight: 400; }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -70,94 +70,148 @@ a { color: var(--accent); }
 }
 .skip:focus { left: .5rem; top: .5rem; }
 
-.notice {
-  background: var(--notice-bg);
-  color: var(--notice-text);
-  padding: .6rem 1rem;
-  border-bottom: 1px solid var(--border);
-  font-size: .95rem;
-}
-.notice a { color: inherit; font-weight: 600; }
-
+/* ---- Üst çubuk ---- */
 .bar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .5rem 1rem;
+  padding: .6rem 1.1rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.bar h1 { font-size: 1.15rem; margin: 0; }
-.bar .sub { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: .4rem; }
+.brand { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.bar h1 { font-size: 1.25rem; margin: 0; letter-spacing: -.01em; }
+.bar .sub { margin: 0; color: var(--muted); font-size: .92rem; }
 
-.status { margin: 0; font-size: .9rem; color: var(--muted); display: flex; align-items: center; gap: .4rem; }
-.status .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--muted); }
+.status {
+  margin: 0; font-size: .85rem; color: var(--muted);
+  display: flex; align-items: center; gap: .45rem;
+  padding: .2rem .65rem; border: 1px solid var(--border); border-radius: 999px;
+}
+.status .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--muted); }
 .status[data-state="live"] .dot { background: var(--ok); }
 .status[data-state="retry"] .dot, .status[data-state="degraded"] .dot { background: var(--warn); }
 
+.notice {
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  padding: .4rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .85rem;
+}
+.notice strong { font-weight: 600; }
+.notice a { color: inherit; font-weight: 600; }
+
+/* ---- Düzen ---- */
 .layout {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 22rem;
+  grid-template-columns: 1fr 23rem;
 }
 .map { min-height: 300px; }
+/* Altlık sade kalsın: renksiz ve soluk; renk yalnızca depremlerde. */
+.leaflet-tile-pane { filter: grayscale(1) contrast(.85) brightness(1.05); opacity: .85; }
+@media (prefers-color-scheme: dark) {
+  /* Koyu temada karoları ters çevir ve karart. */
+  .leaflet-tile-pane { filter: invert(1) grayscale(1) brightness(.8) contrast(.85); opacity: 1; }
+}
 
 .panel {
   display: flex; flex-direction: column; min-height: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);
 }
-.panel-head {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem;
-  padding: .6rem 1rem;
-  border-bottom: 1px solid var(--border);
+
+/* Özet: kaç deprem, en büyüğü hangisi. */
+.overview { padding: 1rem 1.1rem .5rem; }
+.overview h2 { font-size: 1.15rem; margin: 0; }
+.overview h2 #count { font-size: 1.6rem; font-weight: 700; margin-right: .1rem; }
+.biggest {
+  margin-top: .5rem; width: 100%;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem .6rem; text-align: left; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
 }
-.panel-head h2 { font-size: 1rem; margin: 0; }
-.count { color: var(--muted); font-weight: 400; }
-.filter { font-size: .9rem; color: var(--muted); display: flex; align-items: center; gap: .4rem; }
-.filter select {
-  font: inherit; color: var(--text); background: var(--bg);
-  border: 1px solid var(--border); border-radius: 4px; padding: .2rem .3rem;
+.biggest:hover { border-color: var(--muted); }
+.biggest .label { display: block; font-size: .78rem; color: var(--muted); }
+.biggest .what { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.biggest > span:last-child { min-width: 0; }
+
+/* Filtre: tek tıkla seçilen düğmeler. */
+.filter {
+  display: flex; align-items: center; gap: .35rem;
+  padding: .5rem 1.1rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .88rem;
+}
+.filter > span { color: var(--muted); margin-right: .25rem; }
+.filter button {
+  padding: .25rem .7rem; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); border-radius: 999px;
+}
+.filter button:hover { border-color: var(--muted); }
+.filter button[aria-pressed="true"] {
+  background: var(--text); color: var(--surface); border-color: var(--text);
 }
 
+/* ---- Liste ---- */
 .list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .list li { border-bottom: 1px solid var(--border); }
 .list button {
-  width: 100%; display: grid; grid-template-columns: 3.2rem 1fr; gap: .1rem .6rem;
+  width: 100%; display: grid; grid-template-columns: auto 1fr; gap: .05rem .8rem;
   align-items: center; text-align: left;
-  padding: .55rem 1rem; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  padding: .6rem 1.1rem; border: 0; background: none; cursor: pointer;
   transition: background-color 1.5s ease;
 }
 .list button:hover { background: var(--bg); }
-.list .mag {
-  grid-row: span 2;
-  font-weight: 700; font-size: 1.05rem; text-align: center;
-  border-left: 4px solid var(--m0); padding-left: .3rem;
-}
-.list .mag.m3 { border-color: var(--m3); }
-.list .mag.m4 { border-color: var(--m4); }
-.list .mag.m5 { border-color: var(--m5); }
-.list .place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list .meta { color: var(--muted); font-size: .85rem; }
+.list .badge { grid-row: span 2; }
+.list .place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.list .meta { color: var(--muted); font-size: .84rem; }
 /* Yeni/güncellenen satır: kısa ve yumuşak bir vurgu, yanıp sönme değil. */
 .list li.fresh button { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
-.empty { padding: 1rem; color: var(--muted); margin: 0; }
-.legend { margin: 0; padding: .5rem 1rem; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--border); }
-.sw { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin: 0 .15rem 0 .5rem; vertical-align: -1px; }
-.sw.m0 { background: var(--m0); margin-left: 0; }
-.sw.m3 { background: var(--m3); }
-.sw.m4 { background: var(--m4); }
-.sw.m5 { background: var(--m5); }
-.credits { margin: 0; padding: .4rem 1rem .7rem; font-size: .8rem; color: var(--muted); }
+/* Büyüklük rozeti: rengi depremin büyüklüğünü söyler, sayı her zaman okunur. */
+.badge {
+  --c: var(--m0);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.6rem; height: 2.6rem; padding: 0 .3rem;
+  border-radius: 10px; font-weight: 700; font-size: 1.05rem;
+  background: color-mix(in srgb, var(--c) 20%, var(--surface));
+  border: 1.5px solid var(--c);
+}
+.badge.m3 { --c: var(--m3); }
+.badge.m4 { --c: var(--m4); }
+.badge.m5 { --c: var(--m5); }
+.badge.small { min-width: 2.1rem; height: 2.1rem; font-size: .95rem; border-radius: 8px; }
+
+.empty { padding: 1.2rem 1.1rem; color: var(--muted); margin: 0; }
+.credits {
+  margin: 0; padding: .55rem 1.1rem .7rem; font-size: .78rem; color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Harita lejantı ---- */
+.legend {
+  background: var(--surface); color: var(--text);
+  padding: .5rem .7rem; border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
+  font: .8rem/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.legend strong { display: block; margin-bottom: .3rem; font-weight: 600; }
+.legend ul { list-style: none; margin: 0; padding: 0; display: flex; gap: .7rem; align-items: center; }
+.legend li { display: flex; align-items: center; gap: .3rem; }
+.legend i { display: inline-block; border-radius: 50%; border: 1.5px solid var(--c); background: color-mix(in srgb, var(--c) 45%, transparent); }
 
 /* Popup içeriği */
-.pop h3 { margin: 0 0 .25rem; font-size: 1rem; }
+.pop { min-width: 13rem; }
+.pop .head { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; }
+.pop h3 { margin: 0; font-size: 1rem; line-height: 1.25; }
+.pop .when { margin: 0 0 .3rem; color: var(--muted); }
 .pop dl { display: grid; grid-template-columns: auto 1fr; gap: .1rem .6rem; margin: .3rem 0; }
 .pop dt { color: var(--muted); }
 .pop dd { margin: 0; }
-.pop .summary { margin: .4rem 0; }
+.pop .summary { margin: .5rem 0; }
 .pop .summary.pending { color: var(--muted); font-style: italic; }
-.pop .src { margin: .3rem 0 0; font-size: .9rem; }
+.pop .src { margin: .3rem 0 0; font-size: .88rem; color: var(--muted); }
 
 /* Haritada yeni olay vurgusu: tek seferlik genişleyen halka. */
 .ring { animation: ring 2.5s ease-out 1 forwards; transform-origin: center; transform-box: fill-box; }
