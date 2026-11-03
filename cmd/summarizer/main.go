@@ -8,7 +8,7 @@
 //
 //	ARTCI_LLM_API_KEY        sağlayıcı anahtarı; yoksa yalnızca şablon
 //	ARTCI_LLM_URL            OpenAI uyumlu sohbet ucu (varsayılan OpenRouter)
-//	ARTCI_LLM_MODEL          model adı
+//	ARTCI_LLM_MODEL          model adı; virgülle ayrılmış liste = sırayla yedekler
 //	ARTCI_LLM_PRICE_IN       USD / 1M girdi token'ı (sağlayıcı maliyet döndürmezse)
 //	ARTCI_LLM_PRICE_OUT      USD / 1M çıktı token'ı
 //	ARTCI_LLM_DAILY_USD      günlük harcama tavanı (varsayılan 1)

@@ -169,11 +169,22 @@ func TestOpenAICompatible(t *testing.T) {
 	if cost < 0.00199 || cost > 0.00201 {
 		t.Errorf("maliyet 1000*1/1e6 + 100*10/1e6 = 0,002 olmalı: %v", cost)
 	}
-	if gotAuth != "Bearer k" || !strings.Contains(gotBody, `"json_object"`) || !strings.Contains(gotBody, `\"buyukluk\":\"4,1\"`) {
+	if gotAuth != "Bearer k" || !strings.Contains(gotBody, `"json_object"`) || !strings.Contains(gotBody, `"reasoning":{"enabled":false}`) || !strings.Contains(gotBody, `\"buyukluk\":\"4,1\"`) {
 		t.Errorf("istek yanlış: %s %s", gotAuth, gotBody)
 	}
 	if strings.Contains(gotBody, "magValue") {
 		t.Error("iç alanlar modele gönderilmemeli")
+	}
+	if strings.Contains(gotBody, `"models"`) {
+		t.Error("tek modelde yedek listesi gönderilmemeli")
+	}
+
+	o.Model = "a:free, b:free"
+	if _, _, err := o.Generate(context.Background(), BuildFacts(sindirgi())); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotBody, `"model":"a:free"`) || !strings.Contains(gotBody, `"models":["a:free","b:free"]`) {
+		t.Errorf("yedek model listesi yanlış: %s", gotBody)
 	}
 
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

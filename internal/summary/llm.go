@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -37,7 +38,9 @@ Kurallar:
 type OpenAICompatible struct {
 	URL    string // ör. https://openrouter.ai/api/v1/chat/completions
 	APIKey string
-	Model  string
+	// Model; virgülle ayrılmış bir listeyse OpenRouter sırayla dener (ilk meşgulse
+	// ikinciye geçer). Ücretsiz modeller sık sık sınıra takıldığı için yararlı.
+	Model string
 	// Fiyat (USD / 1M token). Sağlayıcı yanıtında maliyet yoksa bununla hesaplanır.
 	InputPerM, OutputPerM float64
 	HTTP                  *http.Client
@@ -47,6 +50,7 @@ func (o *OpenAICompatible) Name() string { return "llm:" + o.Model }
 
 type chatRequest struct {
 	Model          string        `json:"model"`
+	Models         []string      `json:"models,omitempty"` // OpenRouter yedek model listesi
 	Messages       []chatMessage `json:"messages"`
 	Temperature    float64       `json:"temperature"`
 	MaxTokens      int           `json:"max_tokens"`
@@ -57,6 +61,11 @@ type chatRequest struct {
 	Usage *struct {
 		Include bool `json:"include"`
 	} `json:"usage,omitempty"`
+	// OpenRouter: düşünen modellerde düşünmeyi kapatır. Kapalı değilse
+	// max_tokens düşünmeye harcanır ve yanıt boş döner (ör. nemotron :free).
+	Reasoning *struct {
+		Enabled bool `json:"enabled"`
+	} `json:"reasoning,omitempty"`
 }
 
 type chatMessage struct {
@@ -83,8 +92,12 @@ func (o *OpenAICompatible) Generate(ctx context.Context, f Facts) (string, float
 	if err != nil {
 		return "", 0, err
 	}
+	models := strings.Split(o.Model, ",")
+	for i := range models {
+		models[i] = strings.TrimSpace(models[i])
+	}
 	req := chatRequest{
-		Model: o.Model,
+		Model: models[0],
 		Messages: []chatMessage{
 			{Role: "system", Content: SystemPrompt},
 			{Role: "user", Content: string(facts)},
@@ -92,10 +105,16 @@ func (o *OpenAICompatible) Generate(ctx context.Context, f Facts) (string, float
 		Temperature: 0.2,
 		MaxTokens:   300,
 	}
+	if len(models) > 1 {
+		req.Models = models
+	}
 	req.ResponseFormat.Type = "json_object"
 	req.Usage = &struct {
 		Include bool `json:"include"`
 	}{true}
+	req.Reasoning = &struct {
+		Enabled bool `json:"enabled"`
+	}{false}
 	body, _ := json.Marshal(req)
 
 	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, o.URL, bytes.NewReader(body))
