@@ -2,6 +2,7 @@ package notify
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -70,10 +71,40 @@ func TestParseCommand(t *testing.T) {
 }
 
 func TestParseCommandNotCommand(t *testing.T) {
-	for _, in := range []string{"", "   ", "merhaba", "abone Balıkesir"} {
+	for _, in := range []string{"", "   "} {
 		if _, err := ParseCommand(in); !errors.Is(err, ErrNotCommand) {
 			t.Errorf("%q: ErrNotCommand bekleniyordu, got %v", in, err)
 		}
+	}
+}
+
+// Komut ezberlemeden kullanım: il adı, düğmeler ve selamlar.
+func TestParseCommandPlainText(t *testing.T) {
+	tests := []struct {
+		in, name, city string
+		radius         int
+		minMag         float64
+	}{
+		{in: "İzmir", name: CmdSubscribe, city: "İzmir", radius: DefaultRadiusKm, minMag: DefaultMinMag},
+		{in: "izmir", name: CmdSubscribe, city: "İzmir", radius: DefaultRadiusKm, minMag: DefaultMinMag},
+		{in: "balikesir 50 3", name: CmdSubscribe, city: "Balıkesir", radius: 50, minMag: 3},
+		{in: "abone Balıkesir", name: CmdSubscribe, city: "Balıkesir", radius: DefaultRadiusKm, minMag: DefaultMinMag},
+		{in: BtnSubscriptions, name: CmdSubscriptions},
+		{in: "aboneliklerim", name: CmdSubscriptions},
+		{in: BtnCancel, name: CmdCancel},
+		{in: BtnHelp, name: CmdHelp},
+		{in: "Yardım", name: CmdHelp},
+		{in: "Merhaba", name: CmdStart},
+	}
+	for _, tt := range tests {
+		got, err := ParseCommand(tt.in)
+		if err != nil || got.Name != tt.name || got.City.Name != tt.city || got.RadiusKm != tt.radius || got.MinMag != tt.minMag {
+			t.Errorf("%q: got %+v, %v", tt.in, got, err)
+		}
+	}
+	var ue *UserError
+	if _, err := ParseCommand("nasılsın"); !errors.As(err, &ue) || !strings.Contains(ue.Msg, "il bulamadım") {
+		t.Errorf("il olmayan metin anlaşılır bir hata vermeli: %v", err)
 	}
 }
 

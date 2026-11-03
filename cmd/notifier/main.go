@@ -52,6 +52,7 @@ func main() {
 	})
 	if token != "" {
 		tg = notify.NewTelegram(app.Env("ARTCI_TELEGRAM_URL", notify.DefaultTelegramURL), token)
+		tg.Keyboard = notify.MenuKeyboard
 		send = tg.SendMessage
 	} else {
 		slog.Warn("ARTCI_TELEGRAM_TOKEN yok: bot kapalı, tüketici dry-run modunda")

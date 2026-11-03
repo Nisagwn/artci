@@ -12,6 +12,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nisaguven/artci/internal/geo"
 )
@@ -51,15 +52,38 @@ func (e *UserError) Error() string { return e.Msg }
 
 func userErr(format string, a ...any) error { return &UserError{Msg: fmt.Sprintf(format, a...)} }
 
-// ErrNotCommand: mesaj "/" ile başlamıyor; bot yalnızca kısa bir ipucu döner.
+// ErrNotCommand: mesaj boş; bot yalnızca kısa bir ipucu döner.
 var ErrNotCommand = errors.New("komut değil")
+
+// Menü düğmeleri: mesaj kutusunun altında durur, basılınca metni sohbete gönderilir.
+const (
+	BtnSubscriptions = "📋 Aboneliklerim"
+	BtnCancel        = "🗑 Aboneliği bitir"
+	BtnHelp          = "❓ Yardım"
+)
+
+// MenuKeyboard, bot yanıtlarına eklenen kalıcı düğme düzenidir.
+var MenuKeyboard = [][]string{{BtnSubscriptions, BtnCancel}, {BtnHelp}}
 
 // ParseCommand, bir Telegram mesajını komuta çevirir. Hatalar *UserError ise
 // metni doğrudan kullanıcıya gösterilir.
+//
+// Komut ezberlemek gerekmesin diye "/" ile başlamayan metin de anlaşılır:
+// menü düğmeleri ve selamlar ilgili komuta, geri kalanı il adına ("İzmir",
+// isteğe bağlı olarak "İzmir 50 3") çevrilir.
 func ParseCommand(text string) (Command, error) {
 	fields := strings.Fields(text)
-	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
+	if len(fields) == 0 {
 		return Command{}, ErrNotCommand
+	}
+	if !strings.HasPrefix(fields[0], "/") {
+		if name, ok := plainCommand(text); ok {
+			return Command{Name: name}, nil
+		}
+		if foldCmd(fields[0]) == "abone" { // "abone İzmir" da olur
+			fields = fields[1:]
+		}
+		return parseSubscribe(fields)
 	}
 	name := strings.TrimPrefix(fields[0], "/")
 	// Gruplarda Telegram komutu "/abone@ArtciBot" biçiminde gönderir.
@@ -85,6 +109,23 @@ func ParseCommand(text string) (Command, error) {
 	}
 }
 
+// plainCommand, düğme metinlerini ve selamları komuta çevirir. Baştaki emoji
+// atılır; böylece "Aboneliklerim" elle yazılsa da çalışır.
+func plainCommand(text string) (string, bool) {
+	s := foldCmd(strings.TrimLeftFunc(strings.TrimSpace(text), func(r rune) bool { return !unicode.IsLetter(r) }))
+	switch s {
+	case "aboneliklerim", "liste":
+		return CmdSubscriptions, true
+	case "aboneligi bitir", "iptal":
+		return CmdCancel, true
+	case "yardim", "help":
+		return CmdHelp, true
+	case "merhaba", "selam", "basla", "start":
+		return CmdStart, true
+	}
+	return "", false
+}
+
 // foldCmd, "/Yardım" ve "/yardim" gibi yazımları eşitler.
 func foldCmd(s string) string {
 	s = strings.ToLower(s)
@@ -96,7 +137,7 @@ func foldCmd(s string) string {
 // yarıçap ve büyüklüktür. Böylece "/abone Balıkesir" varsayılanlarla çalışır.
 func parseSubscribe(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, userErr("Kullanım: /abone <şehir> <yarıçap_km> <min_büyüklük>\nÖrnek: /abone Balıkesir 100 3,5")
+		return Command{}, userErr("Hangi il? Sadece il adını yazın, ör. İzmir")
 	}
 	// Sondan en fazla iki sayısal argümanı ayır.
 	nums := 0
@@ -111,12 +152,12 @@ func parseSubscribe(args []string) (Command, error) {
 	// Kalan argümanlarda sayı varsa sıra bozuktur (ör. "/abone 100 Balıkesir").
 	for _, a := range cityArgs {
 		if looksNumeric(a) {
-			return Command{}, userErr("Önce şehir adını yazın. Örnek: /abone Balıkesir 100 3,5")
+			return Command{}, userErr("Önce il adını yazın, ör. İzmir 50 3")
 		}
 	}
 	city, ok := geo.FindCity(cityName)
 	if !ok {
-		return Command{}, userErr("%q adında bir il bulamadım. İl adını yazın (ör. Balıkesir, İzmir, Afyon).", cityName)
+		return Command{}, userErr("“%s” adında bir il bulamadım. Sadece il adını yazın, ör. İzmir", cityName)
 	}
 
 	cmd := Command{Name: CmdSubscribe, City: city, RadiusKm: DefaultRadiusKm, MinMag: DefaultMinMag}

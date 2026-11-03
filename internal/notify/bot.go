@@ -35,17 +35,17 @@ type Bot struct {
 	Log  *slog.Logger
 }
 
-const startText = "<b>Artçı</b> deprem bildirim botuna hoş geldiniz.\n\n" +
-	"Seçtiğiniz ilin çevresindeki depremler için kısa bir bildirim alırsınız. " +
-	"Konumunuz değil, yalnızca seçtiğiniz ilin merkezi saklanır; /iptal ile tüm kayıtlarınız silinir.\n\n" +
-	helpBody + "\n\n⚠️ " + Disclaimer
+// Metinler kısa tutulur: kullanıcı komut ezberlemez, il adını yazar ya da
+// alttaki düğmelere basar.
+const startText = "<b>Artçı</b>'ya hoş geldiniz.\n\n" +
+	"Hangi ilin depremlerini bildireyim? <b>İl adını yazmanız yeterli</b>, ör. <code>İzmir</code>\n\n" +
+	"⚠️ " + Disclaimer
 
-const helpBody = "<b>Komutlar</b>\n" +
-	"/abone &lt;il&gt; &lt;yarıçap_km&gt; &lt;min_büyüklük&gt;: ör. <code>/abone Balıkesir 100 3,5</code>\n" +
-	"   (yarıçap 10-500 km, varsayılan 100; büyüklük varsayılan 3,5)\n" +
-	"/aboneliklerim: aboneliklerinizi listeler\n" +
-	"/iptal: tüm aboneliklerinizi ve kayıtlarınızı siler\n" +
-	"/yardim: bu mesaj"
+const helpBody = "<b>Nasıl kullanılır?</b>\n" +
+	"• İl adını yazın, ör. <code>İzmir</code>. O ilin 100 km çevresindeki 3,5 ve üzeri depremleri bildiririm.\n" +
+	"• Daha yakın ya da daha küçük depremler için mesafe ve büyüklüğü de yazabilirsiniz: <code>İzmir 50 3</code>\n" +
+	"• Alttaki düğmelerle aboneliklerinizi görebilir ya da bitirebilirsiniz.\n\n" +
+	"Konumunuz değil, yalnızca yazdığınız il saklanır."
 
 const tryLaterText = "Şu an işlem yapılamadı, lütfen biraz sonra tekrar deneyin."
 
@@ -55,7 +55,7 @@ func (b *Bot) Reply(ctx context.Context, chatID int64, text string) string {
 	var ue *UserError
 	switch {
 	case errors.Is(err, ErrNotCommand):
-		return withDisclaimer("Komutlarla çalışıyorum. Başlamak için /yardim yazın.")
+		return withDisclaimer("İl adını yazın, ör. <code>İzmir</code>")
 	case errors.As(err, &ue):
 		return withDisclaimer(EscapeHTML(ue.Msg))
 	case err != nil:
@@ -66,7 +66,7 @@ func (b *Bot) Reply(ctx context.Context, chatID int64, text string) string {
 	case CmdStart:
 		return startText // tam uyarı zaten içinde
 	case CmdHelp:
-		return withDisclaimer(helpBody + "\n\n" + Disclaimer)
+		return helpBody + "\n\n⚠️ " + Disclaimer // tam uyarı
 	case CmdSubscribe:
 		return withDisclaimer(b.subscribe(ctx, chatID, cmd))
 	case CmdSubscriptions:
@@ -83,9 +83,10 @@ func (b *Bot) Reply(ctx context.Context, chatID int64, text string) string {
 			return withDisclaimer(tryLaterText)
 		}
 		if n == 0 {
-			return withDisclaimer("Kayıtlı aboneliğiniz yok.")
+			return withDisclaimer("Kayıtlı aboneliğiniz yok. Başlamak için il adını yazın.")
 		}
-		return withDisclaimer(fmt.Sprintf("%d aboneliğiniz ve ilgili tüm kayıtlar silindi. Artık bildirim almayacaksınız.", n))
+		return withDisclaimer(fmt.Sprintf("%d aboneliğiniz silindi, artık bildirim almayacaksınız. "+
+			"Yeniden başlamak için il adını yazmanız yeterli.", n))
 	}
 	return withDisclaimer(tryLaterText)
 }
@@ -101,7 +102,7 @@ func (b *Bot) subscribe(ctx context.Context, chatID int64, cmd Command) string {
 		exists = exists || s.City == cmd.City.Name
 	}
 	if !exists && len(subs) >= MaxSubscriptionsPerChat {
-		return fmt.Sprintf("En fazla %d abonelik ekleyebilirsiniz. /aboneliklerim ile bakıp /iptal ile temizleyebilirsiniz.", MaxSubscriptionsPerChat)
+		return fmt.Sprintf("En fazla %d il takip edebilirsiniz. Yer açmak için “%s” düğmesine basın.", MaxSubscriptionsPerChat, BtnCancel)
 	}
 	_, updated, err := b.Store.AddSubscription(ctx, store.Subscription{
 		ChatID: chatID, City: cmd.City.Name, Lat: cmd.City.Lat, Lon: cmd.City.Lon,
@@ -111,21 +112,22 @@ func (b *Bot) subscribe(ctx context.Context, chatID int64, cmd Command) string {
 		b.Log.Error("abonelik eklenemedi", "err", err)
 		return tryLaterText
 	}
-	verb := "Abonelik eklendi"
+	verb := "Tamam"
 	if updated {
 		verb = "Abonelik güncellendi"
 	}
-	return fmt.Sprintf("✅ %s: <b>%s</b> merkezinin %d km çevresindeki %s ve üzeri depremler.",
+	return fmt.Sprintf("✅ %s! <b>%s</b> ve %d km çevresinde %s ve üzeri bir deprem olursa haber vereceğim.\n\n"+
+		"Başka bir il eklemek için adını yazın.",
 		verb, EscapeHTML(cmd.City.Name), cmd.RadiusKm, FormatDecimal(cmd.MinMag))
 }
 
-// FormatSubscriptions, /aboneliklerim yanıtıdır.
+// FormatSubscriptions, "Aboneliklerim" yanıtıdır.
 func FormatSubscriptions(subs []store.Subscription) string {
 	if len(subs) == 0 {
-		return "Henüz aboneliğiniz yok. Örnek: <code>/abone Balıkesir 100 3,5</code>"
+		return "Henüz aboneliğiniz yok. Başlamak için il adını yazın, ör. <code>İzmir</code>"
 	}
 	var sb strings.Builder
-	sb.WriteString("<b>Abonelikleriniz</b>")
+	sb.WriteString("<b>Takip ettiğiniz iller</b>")
 	for _, s := range subs {
 		fmt.Fprintf(&sb, "\n• %s: %d km, %s ve üzeri", EscapeHTML(s.City), s.RadiusKm, FormatDecimal(s.MinMag))
 	}

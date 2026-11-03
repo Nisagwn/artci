@@ -92,10 +92,13 @@ günlüğü kullanıcıya görünen etkiyi exactly-once yapar.
   uzaklık tablosu (`feltBands`). Bilimsel bir şiddet modeli değil, yalnızca
   sakin bir cümle seçmek için var. Her zaman "olabilir" kipinde kalır, tahmin
   içermez.
-- **Abonelik:** aynı il için tekrar `/abone` yazmak yeni satır açmaz, mevcut
-  aboneliği günceller. Sohbet başına en fazla 5 abonelik.
-  `/iptal` tüm abonelikleri siler, bildirim günlüğü `ON DELETE CASCADE` ile
-  birlikte gider.
+- **Abonelik:** komut ezberlemek gerekmez; il adını yazmak (`İzmir`) 100 km /
+  3,5 varsayılanlarıyla abone eder, isteyen `İzmir 50 3` yazar. Alttaki kalıcı
+  düğmeler (Aboneliklerim, Aboneliği bitir, Yardım) `/aboneliklerim`, `/iptal`,
+  `/yardim` ile aynıdır; komutlar da çalışmaya devam eder. Aynı il için tekrar
+  yazmak yeni satır açmaz, mevcut aboneliği günceller. Sohbet başına en fazla
+  5 abonelik. "Aboneliği bitir" tüm abonelikleri siler, bildirim günlüğü
+  `ON DELETE CASCADE` ile birlikte gider.
 - **Dry-run:** `ARTCI_TELEGRAM_TOKEN` yoksa bot kapalıdır ve bildirimler
   yalnızca loglanır, ama günlüğe yine yazılır. Token sonradan verilirse eski
   olaylar yeniden gönderilmez.

@@ -24,6 +24,8 @@ type Telegram struct {
 	MaxRetries int // 429 için en fazla yeniden deneme (varsayılan 3)
 	// Sleep, 429 beklemesi içindir; testlerde gerçek bekleme olmasın diye değiştirilir.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// Keyboard doluysa her mesaja kalıcı düğmeler olarak eklenir (ör. MenuKeyboard).
+	Keyboard [][]string
 }
 
 // NewTelegram, varsayılanlarla bir istemci döner.
@@ -179,10 +181,25 @@ func (t *Telegram) GetUpdates(ctx context.Context, offset int64, timeoutSec int)
 // SendMessage, HTML parse mode ile mesaj gönderir. Metin çağıran tarafından
 // EscapeHTML ile hazırlanmış olmalıdır.
 func (t *Telegram) SendMessage(ctx context.Context, chatID int64, html string) error {
-	return t.call(ctx, "sendMessage", map[string]any{
+	req := map[string]any{
 		"chat_id":                  chatID,
 		"text":                     html,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
-	}, nil)
+	}
+	if len(t.Keyboard) > 0 {
+		rows := make([][]map[string]string, len(t.Keyboard))
+		for i, row := range t.Keyboard {
+			for _, label := range row {
+				rows[i] = append(rows[i], map[string]string{"text": label})
+			}
+		}
+		req["reply_markup"] = map[string]any{
+			"keyboard":                rows,
+			"resize_keyboard":         true,
+			"is_persistent":           true,
+			"input_field_placeholder": "İl adı yazın, ör. İzmir",
+		}
+	}
+	return t.call(ctx, "sendMessage", req, nil)
 }

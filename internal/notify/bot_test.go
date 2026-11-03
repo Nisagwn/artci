@@ -77,10 +77,10 @@ func TestBotReplyFlow(t *testing.T) {
 		t.Fatalf("boş liste: %s", got)
 	}
 	got := b.Reply(ctx, chat, "/abone Balıkesir 100 3,5")
-	if !strings.Contains(got, "Abonelik eklendi") || !strings.Contains(got, "<b>Balıkesir</b> merkezinin 100 km") || !strings.Contains(got, "3,5 ve üzeri") {
+	if !strings.Contains(got, "Tamam") || !strings.Contains(got, "<b>Balıkesir</b> ve 100 km") || !strings.Contains(got, "3,5 ve üzeri") {
 		t.Fatalf("abone yanıtı: %s", got)
 	}
-	if got := b.Reply(ctx, chat, "/abone balikesir 50 4"); !strings.Contains(got, "Abonelik güncellendi") {
+	if got := b.Reply(ctx, chat, "balikesir 50 4"); !strings.Contains(got, "Abonelik güncellendi") {
 		t.Fatalf("aynı il güncellenmeli: %s", got)
 	}
 	if len(ms.subs) != 1 || ms.subs[0].RadiusKm != 50 || ms.subs[0].MinMag != 4 {

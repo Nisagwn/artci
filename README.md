@@ -435,7 +435,7 @@ Kandilli `lst0.asp` Türkiye saati (UTC+3).
 - **Resmî sistem gibi görünmez.** Sitede, botta ve burada: _"Bu bir eğitim projesidir; resmî bilgi için AFAD'ı takip edin."_
 - **Tahmin yok.** Hiçbir bileşen "deprem olacak" ya da "daha büyüğü gelebilir" demez; doğrulayıcı bunu engeller.
 - **Panik yok.** Dil sakin ve olgusal; emoji yalnızca büyüklük seviyesini gösterir.
-- **Kişisel veri en azda.** Abonelikte kişinin konumu değil, seçtiği ilin merkezi saklanır; `/iptal` tüm kayıtları siler.
+- **Kişisel veri en azda.** Abonelikte kişinin konumu değil, seçtiği ilin merkezi saklanır; "Aboneliği bitir" düğmesi (`/iptal`) tüm kayıtları siler.
 - **Kaynaklara saygı.** Makul sorgu aralıkları, değişmeyen kayıtları yeniden yazmama, açık `User-Agent`.
 
 ## Repo yapısı

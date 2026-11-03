@@ -43,6 +43,30 @@ func TestSendMessage(t *testing.T) {
 	}
 }
 
+func TestSendMessageKeyboard(t *testing.T) {
+	var markup any
+	tg := fakeTelegram(t, func(_ string, body map[string]any) (int, string) {
+		markup = body["reply_markup"]
+		return 200, `{"ok":true,"result":{}}`
+	})
+	if err := tg.SendMessage(context.Background(), 1, "x"); err != nil || markup != nil {
+		t.Fatalf("düğme verilmediyse reply_markup olmamalı: %v %v", markup, err)
+	}
+	tg.Keyboard = MenuKeyboard
+	if err := tg.SendMessage(context.Background(), 1, "x"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := markup.(map[string]any)
+	rows, _ := m["keyboard"].([]any)
+	if len(rows) != 2 || m["is_persistent"] != true {
+		t.Fatalf("reply_markup = %v", markup)
+	}
+	first := rows[0].([]any)[0].(map[string]any)
+	if first["text"] != BtnSubscriptions {
+		t.Fatalf("ilk düğme = %v", first)
+	}
+}
+
 func TestSendMessageRetryAfter(t *testing.T) {
 	var calls atomic.Int32
 	var waited []time.Duration
