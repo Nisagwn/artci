@@ -95,6 +95,10 @@ func TestParseCommandPlainText(t *testing.T) {
 		{in: BtnHelp, name: CmdHelp},
 		{in: "Yardım", name: CmdHelp},
 		{in: "Merhaba", name: CmdStart},
+		// Siteden gelen derin bağlantı.
+		{in: "/start manisa", name: CmdSubscribe, city: "Manisa", radius: DefaultRadiusKm, minMag: DefaultMinMag},
+		{in: "/start kahramanmaras", name: CmdSubscribe, city: "Kahramanmaraş", radius: DefaultRadiusKm, minMag: DefaultMinMag},
+		{in: "/start sindirgi", name: CmdStart},
 	}
 	for _, tt := range tests {
 		got, err := ParseCommand(tt.in)

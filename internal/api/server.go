@@ -45,6 +45,9 @@ type Server struct {
 	// RequestTimeout: WebSocket dışındaki istekler için üst süre.
 	RequestTimeout time.Duration
 	Now            func() time.Time
+	// TelegramBot: bildirim botunun kullanıcı adı (@ olmadan). Doluysa site
+	// "Telegram'da bildirim al" bağlantısını gösterir.
+	TelegramBot string
 }
 
 // Handler, tüm yönlendirmeleri ve ortak ara katmanları kurar.
@@ -63,6 +66,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/events", timeout(s.listEvents))
 	mux.Handle("GET /api/events/{id}", timeout(s.eventDetail))
+	mux.Handle("GET /api/config", timeout(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"telegram_bot": s.TelegramBot})
+	}))
 	mux.Handle("GET /api/", timeout(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "bilinmeyen uç")
 	}))

@@ -88,6 +88,9 @@ services:
   api:
     <<: *app
     entrypoint: ["/app/api"]
+    environment:
+      <<: *env
+      ARTCI_TELEGRAM_BOT: ${ARTCI_TELEGRAM_BOT:-}
 
   caddy:
     image: caddy:2-alpine

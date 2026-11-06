@@ -157,7 +157,15 @@ func TestStaticAndHeaders(t *testing.T) {
 			t.Errorf("%s başlığı yok", k)
 		}
 	}
-	rec, body := do(t, h, "/api/yok")
+	rec, body := do(t, h, "/api/config")
+	if rec.Code != 200 || body["telegram_bot"] != "" {
+		t.Fatalf("bot ayarlı değilken boş dönmeli: %d %v", rec.Code, body)
+	}
+	rec, body = do(t, (&Server{Store: &fakeStore{}, TelegramBot: "artci_bot"}).Handler(), "/api/config")
+	if rec.Code != 200 || body["telegram_bot"] != "artci_bot" {
+		t.Fatalf("config: %d %v", rec.Code, body)
+	}
+	rec, body = do(t, h, "/api/yok")
 	if rec.Code != 404 || body["error"] == nil {
 		t.Fatalf("bilinmeyen api ucu JSON 404 olmalı: %d %v", rec.Code, body)
 	}

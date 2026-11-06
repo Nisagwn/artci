@@ -95,6 +95,13 @@ func ParseCommand(text string) (Command, error) {
 
 	switch name {
 	case "start":
+		// Siteden gelen t.me/<bot>?start=manisa bağlantısı "/start manisa" olur:
+		// il tanınırsa doğrudan abone edilir, tanınmazsa hoş geldin mesajı.
+		if len(args) == 1 {
+			if cmd, err := parseSubscribe([]string{args[0]}); err == nil {
+				return cmd, nil
+			}
+		}
 		return Command{Name: CmdStart}, nil
 	case "yardim", "help":
 		return Command{Name: CmdHelp}, nil

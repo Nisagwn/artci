@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,8 +39,11 @@ func main() {
 
 	hub := api.NewHub(api.HubConfig{})
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: (&api.Server{Store: st, Static: web.FS, WS: hub}).Handler(),
+		Addr: addr,
+		Handler: (&api.Server{
+			Store: st, Static: web.FS, WS: hub,
+			TelegramBot: strings.TrimPrefix(app.Env("ARTCI_TELEGRAM_BOT", ""), "@"),
+		}).Handler(),
 		// Sunucu genelinde Read/WriteTimeout yok: uzun ömürlü WebSocket
 		// bağlantılarını keserdi. Normal istekler TimeoutHandler ile sınırlı.
 		ReadHeaderTimeout: 5 * time.Second,

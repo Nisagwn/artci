@@ -403,6 +403,7 @@
   let searchTimer = null;
   function runSearch() {
     query = fold(searchEl.value.trim());
+    updateTelegram();
     quietly(() => {
       for (const e of entries.values()) {
         applyVisibility(e);
@@ -499,6 +500,25 @@
       connect();
     }
   });
+
+  // ---- Telegram bağlantısı ----
+  // Bot ayarlıysa gösterilir. Arama varsa t.me/<bot>?start=<il> olur: bot bu
+  // ili doğrudan abone eder (tanımazsa il adını sorar).
+  let telegramBot = '';
+  const tgEl = $('tg');
+  const tgText = $('tg-text');
+  function updateTelegram() {
+    tgEl.hidden = !telegramBot;
+    if (!telegramBot) return;
+    const name = searchEl.value.trim();
+    const slug = fold(name).replace(/[^a-z0-9]/g, '').slice(0, 60);
+    tgEl.href = 'https://t.me/' + encodeURIComponent(telegramBot) + (slug ? '?start=' + slug : '');
+    tgText.textContent = slug ? '“' + name + '” için Telegram\'da bildirim al' : 'Telegram\'da bildirim al';
+  }
+  fetch('/api/config')
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((c) => { telegramBot = c.telegram_bot || ''; updateTelegram(); })
+    .catch(() => {});
 
   updateCount();
   connect();

@@ -149,6 +149,16 @@ button { font: inherit; color: inherit; }
 }
 .selects select:hover { border-color: var(--muted); }
 
+/* Telegram bildirim bağlantısı: tek, sakin bir düğme. */
+.tg {
+  display: block; text-align: center; text-decoration: none;
+  padding: .4rem .6rem; border-radius: 6px; font-size: .88rem; font-weight: 500;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.tg:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.tg[hidden] { display: none; }
+
 .summary-line {
   margin: 0; font-size: .85rem; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
