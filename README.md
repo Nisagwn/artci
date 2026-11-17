@@ -4,13 +4,33 @@
 
 AFAD, Kandilli Rasathanesi ve EMSC'den canlı deprem verisi toplayan, aynı
 depremi üç kaynaktan gelen farklı değerlere rağmen **tek olaya** indiren,
-haritada canlı gösteren, Telegram'dan abonelere **bir kez** haber veren ve
+haritada canlı gösteren, Telegram'dan abonelere ilk bildirim ve gerektiğinde
+tek bir büyüklük düzeltmesi gönderen ve
 her olay için **doğrulanmış** kısa bir Türkçe özet yazan olay güdümlü bir veri hattı.
 
 Go · PostgreSQL + PostGIS · Redis Streams · Prometheus + Grafana · Docker Compose + Caddy
 
 - Canlı demo: _henüz kurulmadı_ (kurulum: [Canlıya alma](#canlıya-alma))
 - Tasarım ve gerekçeler: [PLAN.md](PLAN.md) · [docs/MATCHING.md](docs/MATCHING.md) · [docs/NOTIFY.md](docs/NOTIFY.md)
+
+## Harita ve Telegram kullanımı
+
+- **Yer arama:** il veya yer adına göre listeyi ve haritayı süzer; eşleşen sonuçlara haritada yaklaşır. `/` aramaya geçer, `Esc` aramayı temizler.
+- **Filtreler:** son 1 saat, 24 saat veya 7 gün; her büyüklük ya da 2, 3, 4 ve üstü. Liste en yeni veya en büyük depreme göre sıralanır. Seçilen aralıkta API'den en fazla 2000 olay yüklenir.
+- **Canlı görünüm:** harita ve liste WebSocket ile güncellenir; bağlantı koparsa yeniden bağlanır. Saatler Türkiye saatidir; açık/koyu görünüm sistem tercihini izler.
+- **Telegram bağlantısı:** bot kullanıcı adı ayarlıysa “Telegram'da bildirim al” bağlantısı görünür. Aramaya tanınan bir il adı yazıp bağlantıyı açarak Telegram'da botu başlatmak, o il için varsayılan aboneliği oluşturur. İl tanınmazsa bot karşılama mesajını gösterir.
+
+Botta komut ezberlemek gerekmez: `İzmir` yazmak il merkezinin **100 km**
+çevresindeki **M ≥ 3,5** depremlere abone eder. `İzmir 50 3` ile yarıçap
+ve eşik değiştirilebilir. **Aboneliklerim**, **Aboneliği bitir** ve **Yardım**
+düğmeleri bulunur; `/abone`, `/aboneliklerim`, `/iptal` ve `/yardim` komutları
+da çalışır. Aynı ili yeniden yazmak aboneliği günceller; sohbet başına en fazla
+5 il eklenebilir. Aboneliği bitirmek tüm abonelikleri siler.
+
+Aboneye olay başına en fazla bir ilk bildirim ve bir güncelleme gönderilir.
+Güncelleme, büyüklük hâlâ abonelik eşiğinin üstünde veya ona eşitken,
+**kullanıcıya bildirilen değerden en az 0,5 farklıysa** gönderilir.
+Kararların ayrıntısı: [docs/NOTIFY.md](docs/NOTIFY.md).
 
 ## Problem
 
@@ -75,7 +95,7 @@ flowchart LR
 |---|---|---|---|
 | `ingest -source=afad\|kandilli\|emsc` | kaynak | `reports.raw`, `reports.dlq` | Kaynağı ortak `Report` biçimine çevirir. Backoff + full jitter, kaynak başına circuit breaker; EMSC'de kopunca yeniden bağlanma ve kopma anından itibaren FDSN ile boşluk doldurma. Bozuk kayıt hattı durdurmaz, DLQ'ya gider. |
 | `merger` | `reports.raw` | `reports`, `events`, `events.updated` | Raporu mevcut olaylarla eşleştirir; bağlar ya da yeni olay açar. Tek tüketici (bkz. [Neden tek merger?](#neden-tek-merger)). |
-| `notifier` | `events.updated`, `subscriptions` | `notifications`, Telegram | Etkilenen aboneleri `ST_DWithin` ile bulur; Telegram hız sınırlarına uyarak gönderir. Aynı olay için ikinci bildirimi birincil anahtar engeller. |
+| `notifier` | `events.updated`, `subscriptions` | `notifications`, Telegram | Etkilenen aboneleri `ST_DWithin` ile bulur; Telegram hız sınırlarına uyarak gönderir. Abone ve olay başına en fazla bir `initial` ve bir `update`; aynı türün tekrarını birincil anahtar engeller. |
 | `summarizer` | `events.updated` | `summaries`, `llm_spend` | M ≥ 3,5 olaylar için özet yazar. Sayıları kod üretir, model yalnızca cümle kurar, doğrulayıcı her sayıyı denetler. |
 | `api` | `events`, `events.updated` | WebSocket istemcileri | REST + WebSocket, gömülü Leaflet harita. |
 | `replay` | katalog (JSONL), ISC bülteni | `reports.raw` | Sentetik ya da gerçek (ISC) bir deprem dizisini hızlandırarak oynatıp doğruluk ve gecikmeyi ölçer. |
@@ -318,7 +338,10 @@ garantisi veremez: tüketici işi yapıp ACK'lemeden önce çökerse mesaj yenid
 gelir. Bunun yerine **at-least-once teslim + idempotent işlem**: aynı rapor
 ikinci kez gelirse `UNIQUE` kısıtı ve upsert onu etkisiz kılar; aynı bildirim
 için `notifications` tablosunun birincil anahtarı ikinci gönderimi engeller.
-Kullanıcının gördüğü etki "tam olarak bir kez"dir.
+Ancak kayıt ile gönderim arasında süreç çökerse bildirim kaybolabilir;
+Telegram gönderimiyle veritabanı kaydı tek transaction değildir. Bu nedenle
+uçtan uca “tam olarak bir kez” garantisi yoktur. Ayrıntı:
+[bildirim gönderim sırası](docs/NOTIFY.md#tek-seferlik-gönderim-kaydet--gönder--başarısızsa-sil).
 
 ### Neden tek merger?
 
@@ -350,6 +373,20 @@ panik, hasar iddiası, prompt injection'a uyma, HTML, bağlantı, şema ihlali)
 ve doğrulayıcının fazla katı olmadığını gösteren 8 kabul senaryosu. CI'da
 her commit'te çalışır.
 
+### İsteğe bağlı LLM ayarları
+
+`ARTCI_LLM_API_KEY` boşsa hat yalnızca şablonlu özetlerle çalışır.
+`ARTCI_LLM_MODEL` tek model adı veya **OpenRouter için virgülle ayrılmış
+yedek model listesi** kabul eder. Ücretsiz modeller de kullanılabilir;
+örnek model listesi [deploy/.env.example](deploy/.env.example) içindedir.
+Sağlayıcının model erişimi ve kullanım sınırları geçerlidir; model hatası
+olduğunda şablona dönülür.
+
+Model adı boş bırakılırsa uygulamadaki varsayılan
+`anthropic/claude-haiku-5.5` kullanılır; bu ücretsiz model seçimi değildir.
+`ARTCI_LLM_DAILY_USD` günlük harcama tavanıdır (varsayılan `1`).
+OpenRouter isteklerinde düşünme kapatılır ve yapılandırılmış JSON yanıtı istenir.
+
 ## Gözlem
 
 Prometheus metrikleri ([`internal/metrics`](internal/metrics/metrics.go)),
@@ -378,6 +415,10 @@ go run ./cmd/notifier &          # ARTCI_TELEGRAM_TOKEN yoksa yalnızca loglar
 go run ./cmd/api                 # http://localhost:8080
 ```
 
+Bu komutlar POSIX kabuk sözdizimi kullanır. Yerel çalıştırmada ayarları
+servisleri başlatmadan önce ortam değişkeni olarak verin; `deploy/.env`
+dosyası `go run` tarafından kendiliğinden yüklenmez.
+
 ### Testler
 
 ```sh
@@ -399,8 +440,16 @@ Tek sunucu, Docker Compose, Caddy ile otomatik TLS:
 
 ```sh
 cp deploy/.env.example deploy/.env      # alan adı, parolalar, isteğe bağlı Telegram/LLM anahtarları
+# deploy/.env dosyasındaki alan adı, parola ve isteğe bağlı bot/LLM ayarlarını düzenleyin.
 make up    # = docker build -t artci:latest . && docker compose ... up -d --no-build --wait
 ```
+
+Telegram için `ARTCI_TELEGRAM_TOKEN` bildirim botunu çalıştırır;
+`ARTCI_TELEGRAM_BOT` ise aynı botun **@ olmadan kullanıcı adıdır** ve
+sitedeki abonelik bağlantısını açar. Kullanıcı adı boşsa bağlantı gizlenir;
+token boşsa bildirimler yalnızca loglanır. LLM için `ARTCI_LLM_API_KEY`,
+`ARTCI_LLM_MODEL` ve `ARTCI_LLM_DAILY_USD` ayarlarını kullanın.
+Bu ayarlar değiştiğinde `make up` ile ilgili servisleri yeniden oluşturun.
 
 İmaj bir kez derlenir, sonra yığın `--no-build` ile başlar: yedi servis aynı
 `artci:latest` imajını paylaştığı için `up --build` onları eşzamanlı derler
