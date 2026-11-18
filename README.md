@@ -2,30 +2,36 @@
 
 > **Bu bir eğitim projesidir; resmî bilgi için [AFAD](https://deprem.afad.gov.tr)'ı takip edin.**
 
-AFAD, Kandilli Rasathanesi ve EMSC'den canlı deprem verisi toplayan, aynı
-depremi üç kaynaktan gelen farklı değerlere rağmen **tek olaya** indiren,
-haritada canlı gösteren, Telegram'dan abonelere ilk bildirim ve gerektiğinde
-tek bir büyüklük düzeltmesi gönderen ve
-her olay için **doğrulanmış** kısa bir Türkçe özet yazan olay güdümlü bir veri hattı.
+Artçı, AFAD, Kandilli Rasathanesi ve EMSC'den gelen deprem raporlarını
+ortak bir olay modelinde birleştiren, Go ile geliştirilmiş olay güdümlü bir
+veri işleme sistemidir. Depremleri canlı haritada gösterir, il bazlı Telegram
+abonelikleri üzerinden bildirim gönderir ve M ≥ 3,5 olaylar için kaynak
+verileriyle tutarlılığı denetlenen Türkçe özetler üretir.
 
 Go · PostgreSQL + PostGIS · Redis Streams · Prometheus + Grafana · Docker Compose + Caddy
 
-- Canlı demo: _henüz kurulmadı_ (kurulum: [Canlıya alma](#canlıya-alma))
-- Tasarım ve gerekçeler: [PLAN.md](PLAN.md) · [docs/MATCHING.md](docs/MATCHING.md) · [docs/NOTIFY.md](docs/NOTIFY.md)
+**Dokümantasyon:** [Proje planı](PLAN.md) · [Eşleştirme yöntemi](docs/MATCHING.md) · [Bildirim politikası](docs/NOTIFY.md)
 
-## Harita ve Telegram kullanımı
+**İçindekiler:** [Özellikler](#özellikler) · [Mimari](#sistem-mimarisi) · [Tekilleştirme](#tekilleştirme) · [Ölçümler](#ölçüm-sonuçları) · [Kurulum](#çalıştırma) · [Veri kaynakları](#veri-kaynakları)
+
+## Özellikler
 
 - **Yer arama:** il veya yer adına göre listeyi ve haritayı süzer; eşleşen sonuçlara haritada yaklaşır. `/` aramaya geçer, `Esc` aramayı temizler.
 - **Filtreler:** son 1 saat, 24 saat veya 7 gün; her büyüklük ya da 2, 3, 4 ve üstü. Liste en yeni veya en büyük depreme göre sıralanır. Seçilen aralıkta API'den en fazla 2000 olay yüklenir.
 - **Canlı görünüm:** harita ve liste WebSocket ile güncellenir; bağlantı koparsa yeniden bağlanır. Saatler Türkiye saatidir; açık/koyu görünüm sistem tercihini izler.
 - **Telegram bağlantısı:** bot kullanıcı adı ayarlıysa “Telegram'da bildirim al” bağlantısı görünür. Aramaya tanınan bir il adı yazıp bağlantıyı açarak Telegram'da botu başlatmak, o il için varsayılan aboneliği oluşturur. İl tanınmazsa bot karşılama mesajını gösterir.
 
-Botta komut ezberlemek gerekmez: `İzmir` yazmak il merkezinin **100 km**
-çevresindeki **M ≥ 3,5** depremlere abone eder. `İzmir 50 3` ile yarıçap
-ve eşik değiştirilebilir. **Aboneliklerim**, **Aboneliği bitir** ve **Yardım**
-düğmeleri bulunur; `/abone`, `/aboneliklerim`, `/iptal` ve `/yardim` komutları
-da çalışır. Aynı ili yeniden yazmak aboneliği günceller; sohbet başına en fazla
-5 il eklenebilir. Aboneliği bitirmek tüm abonelikleri siler.
+### Telegram abonelikleri
+
+Bot, il adıyla abonelik oluşturmayı ve düğmeler üzerinden abonelik yönetimini
+destekler. `İzmir` mesajı, il merkezinin **100 km** çevresindeki **M ≥ 3,5**
+depremler için abonelik oluşturur. `İzmir 50 3` mesajı ise yarıçapı 50 km,
+asgari büyüklüğü 3 olarak ayarlar.
+
+**Aboneliklerim**, **Aboneliği bitir** ve **Yardım** düğmelerinin yanında
+`/abone`, `/aboneliklerim`, `/iptal` ve `/yardim` komutları da desteklenir.
+Aynı il için yeniden başvuru mevcut aboneliği günceller. Sohbet başına en
+fazla 5 il eklenebilir; iptal işlemi o sohbetin tüm aboneliklerini siler.
 
 Aboneye olay başına en fazla bir ilk bildirim ve bir güncelleme gönderilir.
 Güncelleme, büyüklük hâlâ abonelik eşiğinin üstünde veya ona eşitken,
@@ -34,7 +40,8 @@ Kararların ayrıntısı: [docs/NOTIFY.md](docs/NOTIFY.md).
 
 ## Problem
 
-Aynı deprem dakikalar içinde üç kaynaktan gelir:
+Aynı deprem, kaynakların yayın zamanları ve ölçüm yöntemleri nedeniyle
+farklı saat, büyüklük ve konum değerleriyle raporlanabilir. Örnek:
 
 | Kaynak | Saat | Büyüklük | Konum |
 |---|---|---|---|
@@ -42,15 +49,17 @@ Aynı deprem dakikalar içinde üç kaynaktan gelir:
 | Kandilli | 15:04:30 | 4,3 | 39,19 K · 28,17 D |
 | EMSC | 15:04:32 | 4,2 | 39,23 K · 28,12 D |
 
-Kullanıcı bunu **bir** deprem olarak görmeli, **bir** bildirim almalı. Artçı
-dizisinde ise saniyeler arayla gerçekten birden çok deprem olur; bunlar
-birleştirilmemeli.
+Amaç, aynı depreme ait raporları tek olay altında toplamak ve yinelenen
+bildirimleri önlemektir. Buna karşılık, yoğun artçı dizilerinde saniyeler
+arayla gerçekleşen farklı depremlerin ayrı tutulması gerekir.
 
 ## Sistem mimarisi
 
-Artçı birbirinden bağımsız küçük Go servislerinden oluşur. Servisler birbirini
-doğrudan çağırmaz; aralarındaki tek bağ iki Redis akışı ve ortak PostgreSQL
-veritabanıdır. Böylece bir kaynak ya da servis çökünce diğerleri çalışmaya devam eder.
+Artçı, ayrı süreçler olarak çalışan Go servislerinden oluşur. Servisler
+arasındaki veri aktarımı `reports.raw` ve `events.updated` Redis akışları
+üzerinden yürütülür; kalıcı kayıtlar PostgreSQL'de tutulur. Kaynak
+istemcilerinin ayrı süreçlerde çalışması, tek bir kaynaktaki kesintinin
+diğer kaynakların veri toplamasını durdurmasını önler.
 
 ### Genel bakış
 
@@ -100,7 +109,7 @@ flowchart LR
 | `api` | `events`, `events.updated` | WebSocket istemcileri | REST + WebSocket, gömülü Leaflet harita. |
 | `replay` | katalog (JSONL), ISC bülteni | `reports.raw` | Sentetik ya da gerçek (ISC) bir deprem dizisini hızlandırarak oynatıp doğruluk ve gecikmeyi ölçer. |
 
-### Bir raporun yolculuğu
+### Veri işleme akışı
 
 Aynı depremin iki kaynaktan gelmesi:
 
@@ -193,7 +202,7 @@ erDiagram
     notifications {
         uuid event_id PK
         bigint subscription_id PK
-        text kind "initial | update"
+        text kind PK "initial | update"
     }
     summaries {
         uuid event_id PK
@@ -234,35 +243,36 @@ yeniden başlatmada akışlardaki onaylanmamış mesajlar kaybolmaz.
 
 Yeni rapor için (ayrıntı: [docs/MATCHING.md](docs/MATCHING.md)):
 
-1. `(source, source_event_id)` zaten varsa bu bir **güncellemedir**; değişen bir şey yoksa dur (idempotent).
+1. `(source, source_event_id)` mevcutsa rapor **güncelleme** olarak işlenir; içerik değişmemişse işlem sonlandırılır (idempotent).
 2. Zaman farkı ≤ **10 sn** ve mesafe ≤ **50 km** olan olaylar adaydır.
 3. `puan = 1 − (|Δt|/10 sn × 0,4 + mesafe/50 km × 0,4 + |ΔM| × 0,2)`
-4. En iyi puan ≥ **0,5** ve aday olayda **bu kaynaktan başka rapor yoksa** bağla; yoksa yeni olay.
-5. Gösterilen değerler: AFAD > Kandilli > EMSC. Değiştiyse `version` +1, `events.updated`'a yaz.
+4. En iyi puan ≥ **0,5** ise ve aday olayda **aynı kaynaktan başka rapor yoksa** rapor bu olaya bağlanır; aksi hâlde yeni olay oluşturulur.
+5. Gösterilen değerler AFAD > Kandilli > EMSC önceliğiyle seçilir. Değerler değiştiğinde `version` artırılır ve `events.updated` akışına yazılır.
 
-### Eşikleri nasıl ayarladım
+### Eşik seçimi ve doğrulama
 
-Plan'daki başlangıç eşikleri 60 sn / 100 km / 0,6 idi. Bir artçı dizisini
-`replay` ile oynatınca, yoğun dönemde 60 sn'lik pencerede 3–10 farklı deprem
-aday oluyordu: yanlış birleşen çiftlerin medyan zaman farkı 8 sn, doğru
-çiftlerinki 0,9 sn idi. 217 eşik bileşimini iki gürültü düzeyinde taradım ve
-yalnızca bir gürültü düzeyine iyi oturanı değil, ikisinde de sağlam olanı seçtim.
+Başlangıç planındaki eşikler 60 sn / 100 km / 0,6 olarak belirlenmiştir.
+Sentetik artçı dizilerinin `replay` ile değerlendirilmesinde, yoğun dönemlerde
+60 saniyelik pencerede 3–10 farklı depremin aday hâline geldiği görülmüştür.
+Yanlış birleştirilen çiftlerin medyan zaman farkı 8 sn, doğru çiftlerinki
+0,9 sn'dir. İki gürültü düzeyinde 217 eşik bileşimi taranarak her iki
+koşulda da tutarlı sonuç veren eşikler seçilmiştir.
 
-Sonra seçimi **gerçek** bir diziyle doğruladım: 10 Ağustos 2025 Sındırgı
-(Mw 6,1) depreminin ilk 7 günü, [ISC bülteninden](http://www.isc.ac.uk/iscbulletin/)
-AFAD ve Kandilli'nin kendi çözümleri (4201 deprem, 6949 rapor). ISC her
-depremi tek olayda topladığı için hangi raporun hangi depreme ait olduğu
-bağımsız olarak biliniyor.
+Seçilen eşikler, 10 Ağustos 2025 Sındırgı (Mw 6,1) depremini izleyen ilk
+7 güne ait gerçek kayıtlarla da değerlendirilmiştir. [ISC bültenindeki](http://www.isc.ac.uk/iscbulletin/)
+AFAD ve Kandilli çözümlerinden oluşan veri kümesi 4201 deprem ve 6949 rapor
+içerir. Değerlendirmede ISC'nin olay gruplaması referans alınmıştır.
 
 | Eşikler | F1 sentetik | F1 sentetik (2× gürültü) | **F1 gerçek dizi** |
 |---|---|---|---|
 | Plan §8: 60 sn / 100 km / 0,6 | 0,847 | 0,851 | 0,944 |
 | **Seçilen: 10 sn / 50 km / 0,5** | **0,959** | **0,954** | **0,986** |
 
-Gerçek dizide seçilen eşikler 72 bileşimin en iyisinden yalnızca 0,0007
-geride; değiştirmedim. Kalan hatanın çoğu doğru cevabın kendisinden: ISC'nin
-otomatik gruplamasında 45 çift 10 sn / 50 km'den uzak, bu yüzden ulaşılabilir
-recall ≈ 0,984 (ölçülen 0,981). Ayrıntı:
+Gerçek dizide seçilen eşiklerin F1 değeri, taranan 72 bileşimdeki en iyi
+sonucun 0,0007 altındadır; mevcut eşikler korunmuştur. Referans veri kümesi
+de sınırlamalar içerir: ISC'nin otomatik gruplamasındaki 45 çift, 10 sn /
+50 km aday penceresinin dışındadır. Bu pencereyle ulaşılabilir recall
+yaklaşık 0,984, ölçülen değer ise 0,981'dir. Ayrıntı:
 [docs/MATCHING.md → Gerçek dizide doğrulama](docs/MATCHING.md#gerçek-dizide-doğrulama).
 
 > EMSC çözümleri ISC bülteninde yok; gerçek veri doğrulaması iki kaynaklıdır.
@@ -291,10 +301,11 @@ gerçek deprem), yerel PostGIS + Redis, tek merger:
 | Olay gecikmesi, bekletmeden 478 rapor (kuyruk dolu) | p50 0,70 sn · p95 1,26 sn · p99 1,30 sn |
 | 10 kat yoğun dizi (günde 4000 artçı) F1 | 0,70: açgözlü eşleştirmenin sınırı |
 
-10× ölçümündeki tek uç değer (6,9 sn) hattın yavaşlığı değil. O olayın en
-erken raporu 195,4. saniyede geldi, olay kimliği ise ilk kez 202,3. saniyede
-(başka bir raporun geldiği anda) yayınlandı. Rapor önce başka bir olaya
-bağlanıp sonra yeni olaya geçmiş görünüyor; ölçüm bunu gecikme olarak sayar.
+10× hızdaki ölçümde 6,9 saniyelik bir uç değer gözlenmiştir. İlgili olayın
+ilk raporu 195,4. saniyede alınmış, olay kimliği ilk kez 202,3. saniyede
+yayımlanmıştır. İnceleme, raporun önce başka bir olayla eşleşip sonradan
+ayrı bir olaya taşınmış olabileceğini göstermektedir; ölçüm bu süreyi
+gecikmeye dahil eder.
 
 Bu sayılar uçtan uca **bildirim** gecikmesi değildir: kaynakların kendi
 yayın gecikmesi (dakikalar) ve Telegram gönderimi dahil değil. Plan'ın
@@ -310,13 +321,13 @@ go run ./cmd/replay run -in /tmp/sindirgi.jsonl -speed 10 -cleanup
 
 Gerçek dizi kataloğu repoda: [`testdata/replay/sindirgi-isc-2025-08.jsonl.gz`](testdata/replay/sindirgi-isc-2025-08.jsonl.gz)
 (`go run ./cmd/replay isc` ile yeniden üretilir) ve her `go test`'te
-oynatılır; doğruluk F1 0,98'in altına düşerse test kırılır. Aynı katalog
+oynatılır; F1 değeri 0,98'in altına düşerse test başarısız olur. Aynı katalog
 gerçek hattan da geçirilebilir (`make replay-real`, merger + PostGIS + Redis
 çalışıyor olmalı): ölçülen F1 0,9857, bellek içi testle aynı.
 
-Gerçek bir afetin verisini kullanırken bunu saygıyla ve yalnızca mühendislik
-amacıyla yapıyorum. Kullanılan yalnızca kurumların yayımladığı deprem
-parametreleridir (zaman, konum, büyüklük).
+Gerçek olay verileri yalnızca mühendislik değerlendirmesi amacıyla
+kullanılır. Veri kümesi, kurumların yayımladığı deprem parametreleriyle
+(zaman, konum ve büyüklük) sınırlıdır.
 
 ## Güvenilirlik
 
@@ -333,11 +344,11 @@ parametreleridir (zaman, konum, büyüklük).
 
 ### Neden exactly-once değil?
 
-Redis Streams (ve aslında herhangi bir ağ) "tam olarak bir kez" teslim
-garantisi veremez: tüketici işi yapıp ACK'lemeden önce çökerse mesaj yeniden
-gelir. Bunun yerine **at-least-once teslim + idempotent işlem**: aynı rapor
-ikinci kez gelirse `UNIQUE` kısıtı ve upsert onu etkisiz kılar; aynı bildirim
-için `notifications` tablosunun birincil anahtarı ikinci gönderimi engeller.
+Sistem, Redis Streams üzerinde **at-least-once teslim ve idempotent işlem**
+modelini kullanır. Tüketici işlemi tamamlayıp ACK göndermeden kapanırsa mesaj
+yeniden teslim edilebilir. Yinelenen raporlar `UNIQUE` kısıtı ve upsert ile
+etkisiz hâle getirilir; aynı bildirim türünün tekrar kaydedilmesi
+`notifications` tablosunun birincil anahtarıyla engellenir.
 Ancak kayıt ile gönderim arasında süreç çökerse bildirim kaybolabilir;
 Telegram gönderimiyle veritabanı kaydı tek transaction değildir. Bu nedenle
 uçtan uca “tam olarak bir kez” garantisi yoktur. Ayrıntı:
@@ -348,17 +359,18 @@ uçtan uca “tam olarak bir kez” garantisi yoktur. Ayrıntı:
 Eşleştirme "oku → karar ver → yaz" işlemidir. İki merger aynı depremin iki
 raporunu aynı anda işlerse ikisi de aday bulamaz ve iki olay açar. Hacim
 (sakin dönemde dakikada birkaç rapor, artçı fırtınasında saniyede birkaç)
-tek tüketiciye fazlasıyla sığar: ölçülen iş hacmi saniyede ~220–350 rapor.
-Ölçek gerekirse: bölgeye göre bölümleme ya da aday olayları kilitlemek.
+tek tüketiciyle karşılanır: ölçülen iş hacmi saniyede yaklaşık 220–350 rapordur.
+Daha yüksek hacimler için bölgesel bölümleme veya aday olayların kilitlenmesi
+gibi yöntemlerin değerlendirilmesi gerekir.
 
 ### Neden Kafka değil?
 
-Hacim düşük, ihtiyaç duyulan şey consumer group + onaylanmamış mesaj listesi
-+ yeniden işleme. Redis Streams bunların hepsini tek, hafif bir süreçle verir.
-Kafka'nın bölümleme, uzun saklama ve yüksek iş hacmi üstünlüğü burada
-kullanılmazdı; işletme maliyeti ise kullanılırdı.
+Mevcut iş yükü için gereken tüketici grupları, bekleyen mesaj takibi ve
+yeniden işleme özellikleri Redis Streams ile karşılanır. Kafka'nın bölümleme
+ve uzun süreli olay saklama özellikleri bu kurulumun gereksinimleri arasında
+olmadığından, işletim karmaşıklığını sınırlamak için Redis tercih edilmiştir.
 
-## Yapay zekâ özeti ve guardrail'ler
+## Yapay zekâ destekli özetler ve doğrulama
 
 İlke: **model sayı üretmez, sadece cümle kurar.**
 
@@ -393,31 +405,47 @@ Prometheus metrikleri ([`internal/metrics`](internal/metrics/metrics.go)),
 Grafana panosu ([`deploy/grafana/dashboards/artci.json`](deploy/grafana/dashboards/artci.json)),
 alarmlar ([`deploy/prometheus/alerts.yml`](deploy/prometheus/alerts.yml)):
 
-- Bir kaynağa 15 dakikadır ulaşılamıyor _(Plan "rapor gelmiyor" diyordu; sakin saatlerde yanlış alarm vermesin diye erişime bakılıyor)_
+- Bir kaynağa 15 dakikadır ulaşılamaması; sakin dönemlerde yanlış alarmı azaltmak için rapor sayısı yerine kaynak erişimi izlenir.
 - DLQ son 1 saatte 10'dan fazla kayıt aldı
 - Bildirim gecikmesi p95 > 30 sn
 - LLM özetlerinin %20'sinden fazlası reddediliyor
 
-_Grafana ekran görüntüsü: canlı kurulumdan sonra eklenecek._
-
 ## Çalıştırma
+
+### Gereksinimler
+
+- Go 1.26.7 veya üzeri (`go.mod` ile uyumlu).
+- Docker ve Docker Compose; yerel PostGIS/Redis altyapısı veya tüm servislerin çalıştırılması için.
+- Make hedefleri için GNU Make ve POSIX uyumlu kabuk; Windows'ta WSL veya uygun bir kabuk ortamı kullanılabilir.
+- Telegram ve LLM entegrasyonları için ilgili sağlayıcı anahtarları; her iki entegrasyon da isteğe bağlıdır.
 
 ### Yerel geliştirme
 
+Altyapıyı başlatın:
+
 ```sh
-docker compose -f deploy/docker-compose.dev.yml up -d    # PostGIS + Redis
-go run ./cmd/merger &
-go run ./cmd/ingest --source=afad &
-go run ./cmd/ingest --source=kandilli &
-go run ./cmd/ingest --source=emsc &
-go run ./cmd/summarizer &
-go run ./cmd/notifier &          # ARTCI_TELEGRAM_TOKEN yoksa yalnızca loglar
-go run ./cmd/api                 # http://localhost:8080
+make dev-up
 ```
 
-Bu komutlar POSIX kabuk sözdizimi kullanır. Yerel çalıştırmada ayarları
-servisleri başlatmadan önce ortam değişkeni olarak verin; `deploy/.env`
-dosyası `go run` tarafından kendiliğinden yüklenmez.
+Ardından aşağıdaki hedeflerin her birini ayrı terminalde çalıştırın.
+Makefile, yerel veritabanı ve Redis bağlantılarını ayarlar; her servis için
+ayrı metrik portu kullanarak port çakışmalarını önler.
+
+```sh
+make run-merger
+make run-ingest-afad
+make run-ingest-kandilli
+make run-ingest-emsc
+make run-summarizer
+make run-notifier
+make run-api
+```
+
+Harita [http://localhost:8080](http://localhost:8080) adresinde açılır.
+Telegram token'ı verilmediyse bildirici yalnızca log üretir; LLM anahtarı
+verilmediyse özetleyici şablon kullanır. İsteğe bağlı ayarları servisleri
+başlatmadan önce ortam değişkeni olarak tanımlayın. `deploy/.env` dosyası
+yerel `go run` komutları tarafından kendiliğinden yüklenmez.
 
 ### Testler
 
@@ -444,20 +472,31 @@ cp deploy/.env.example deploy/.env      # alan adı, parolalar, isteğe bağlı 
 make up    # = docker build -t artci:latest . && docker compose ... up -d --no-build --wait
 ```
 
-Telegram için `ARTCI_TELEGRAM_TOKEN` bildirim botunu çalıştırır;
-`ARTCI_TELEGRAM_BOT` ise aynı botun **@ olmadan kullanıcı adıdır** ve
-sitedeki abonelik bağlantısını açar. Kullanıcı adı boşsa bağlantı gizlenir;
-token boşsa bildirimler yalnızca loglanır. LLM için `ARTCI_LLM_API_KEY`,
-`ARTCI_LLM_MODEL` ve `ARTCI_LLM_DAILY_USD` ayarlarını kullanın.
-Bu ayarlar değiştiğinde `make up` ile ilgili servisleri yeniden oluşturun.
+Temel yapılandırma [deploy/.env.example](deploy/.env.example) dosyasında yer alır:
 
-İmaj bir kez derlenir, sonra yığın `--no-build` ile başlar: yedi servis aynı
-`artci:latest` imajını paylaştığı için `up --build` onları eşzamanlı derler
-ve Docker Desktop'ta "image already exists" hatasıyla düşebilir.
+| Değişken | Açıklama |
+|---|---|
+| `ARTCI_DOMAIN` | Caddy'nin hizmet vereceği alan adı; yerel HTTP denemesi için `http://localhost`. |
+| `POSTGRES_PASSWORD` | PostgreSQL parolası. Örnek değer değiştirilmelidir. |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana yönetici parolası. Örnek değer değiştirilmelidir. |
+| `ARTCI_USER_AGENT` | Veri kaynaklarına gönderilen uygulama ve iletişim bilgisi. |
+| `ARTCI_TELEGRAM_TOKEN` | Bot token'ı; boşsa bildirimler yalnızca loglanır. |
+| `ARTCI_TELEGRAM_BOT` | Aynı botun `@` olmadan kullanıcı adı; boşsa sitedeki abonelik bağlantısı gizlenir. |
+| `ARTCI_LLM_API_KEY` | LLM sağlayıcı anahtarı; boşsa şablonlu özet kullanılır. |
+| `ARTCI_LLM_MODEL` | Model adı veya OpenRouter için virgülle ayrılmış yedek model listesi. |
+| `ARTCI_LLM_DAILY_USD` | Günlük LLM harcama tavanı; varsayılan `1` USD. |
+
+Ayarlar değiştirildiğinde `make up` komutu servisleri güncel yapılandırmayla
+yeniden oluşturur.
+
+`make up`, ortak `artci:latest` imajını bir kez derler ve servisleri
+`--no-build` ile başlatır. Bu sıra, aynı imajı kullanan yedi servisin
+eşzamanlı derlenmesinden kaynaklanabilen Docker Desktop imaj çakışmasını önler.
 
 Yerelde denemek için `ARTCI_DOMAIN=http://localhost` kullanın: Caddy TLS'siz
-http://localhost üzerinden sunar. (`localhost` yazılırsa Caddy kendi yerel
-sertifikasını kullanır; tarayıcı ona güvenmediği için sayfa açılmaz.)
+http://localhost üzerinden sunar. Yalnızca `localhost` yazılması, Caddy'nin
+yerel sertifikasını kullanmasına yol açar; tarayıcıda bu sertifikaya güven
+tanımlanmamışsa sertifika hatası görülebilir.
 
 Dışarıya yalnızca 80/443 açılır. Grafana ve Prometheus yalnızca sunucuda
 dinler: `ssh -L 3000:localhost:3000 sunucu` → http://localhost:3000.
@@ -481,11 +520,10 @@ Kandilli `lst0.asp` Türkiye saati (UTC+3).
 
 ## Etik ve sorumluluk
 
-- **Resmî sistem gibi görünmez.** Sitede, botta ve burada: _"Bu bir eğitim projesidir; resmî bilgi için AFAD'ı takip edin."_
-- **Tahmin yok.** Hiçbir bileşen "deprem olacak" ya da "daha büyüğü gelebilir" demez; doğrulayıcı bunu engeller.
-- **Panik yok.** Dil sakin ve olgusal; emoji yalnızca büyüklük seviyesini gösterir.
-- **Kişisel veri en azda.** Abonelikte kişinin konumu değil, seçtiği ilin merkezi saklanır; "Aboneliği bitir" düğmesi (`/iptal`) tüm kayıtları siler.
-- **Kaynaklara saygı.** Makul sorgu aralıkları, değişmeyen kayıtları yeniden yazmama, açık `User-Agent`.
+- **Kullanım kapsamı:** eğitim projesi olduğu site ve bot üzerinde açıkça belirtilir; resmî bilgi için AFAD'a yönlendirilir.
+- **İçerik ilkeleri:** özet doğrulayıcısı deprem tahmini, doğrulanamayan hasar bilgisi ve panik ifadelerini reddeder.
+- **Veri minimizasyonu:** abonelikler kullanıcının kişisel konumu yerine seçilen ilin merkezini esas alır. `/iptal`, sohbetin aboneliklerini ve bunlara bağlı bildirim kayıtlarını siler.
+- **Kaynak kullanımı:** sorgu aralıkları sınırlandırılır, değişmeyen raporlar yeniden yayımlanmaz ve isteklerde açık bir `User-Agent` kullanılır.
 
 ## Repo yapısı
 
