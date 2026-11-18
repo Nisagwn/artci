@@ -19,12 +19,19 @@ type fakeFiller struct {
 	mu     sync.Mutex
 	since  []time.Time
 	result Result
+	called chan struct{}
 }
 
 func (f *fakeFiller) Since(_ context.Context, since time.Time) (Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.since = append(f.since, since)
+	if f.called != nil {
+		select {
+		case f.called <- struct{}{}:
+		default:
+		}
+	}
 	return f.result, nil
 }
 
@@ -43,6 +50,7 @@ func TestEMSCStream_ReconnectAndGapFill(t *testing.T) {
 		lines = append(lines, append([]byte(nil), sc.Bytes()...))
 	}
 
+	fillCalled := make(chan struct{}, 2)
 	var conns atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, nil)
@@ -55,6 +63,13 @@ func TestEMSCStream_ReconnectAndGapFill(t *testing.T) {
 		case 1:
 			c.Write(ctx, websocket.MessageText, lines[0])
 			c.Write(ctx, websocket.MessageText, []byte(`{"action":"create","data":{"properties":{"time":"bozuk"}}}`))
+			// İlk doldurma başlamadan bağlantı kapanırsa fillGap goroutine'i
+			// iptal edilmiş bağlamla başlayıp hiç çağrı yapmayabilir.
+			select {
+			case <-fillCalled:
+			case <-ctx.Done():
+				return
+			}
 			c.Close(websocket.StatusInternalError, "sunucu düştü")
 		default:
 			c.Write(ctx, websocket.MessageText, lines[1])
@@ -69,7 +84,7 @@ func TestEMSCStream_ReconnectAndGapFill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filler := &fakeFiller{result: fdsn}
+	filler := &fakeFiller{result: fdsn, called: fillCalled}
 	sink := &fakeSink{}
 	s := &EMSCStream{
 		URL:       "ws" + strings.TrimPrefix(srv.URL, "http"),
@@ -79,6 +94,7 @@ func TestEMSCStream_ReconnectAndGapFill(t *testing.T) {
 		GapMargin: 15 * time.Minute,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	start := time.Now()
 	go func() { s.Run(ctx); close(done) }()
