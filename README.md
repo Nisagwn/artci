@@ -547,6 +547,13 @@ tanımlanmamışsa sertifika hatası görülebilir.
 Dışarıya yalnızca 80/443 açılır. Grafana ve Prometheus yalnızca sunucuda
 dinler: `ssh -L 3000:localhost:3000 sunucu` → http://localhost:3000.
 
+### PostGIS yedekleme ve kurtarma
+
+`deploy/postgres-backup.sh` çalışan PostGIS veritabanından `age` ile şifreli
+yedek alır ve arşivi yeni bir veritabanına geri yükler. CI, ayrı bir PostGIS
+örneğinde olay, kaynak raporu, abonelik ve gönderim kaydının geri geldiğini
+doğrular. [Yedek alma ve kurtarma adımları](docs/BACKUP.md).
+
 ## Veri kaynakları
 
 | Kaynak | Erişim | Not |
