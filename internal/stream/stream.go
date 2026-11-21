@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -25,6 +26,8 @@ const (
 
 // MaxLen: akışların yaklaşık üst sınırı (bellek tavanı).
 const MaxLen = 100_000
+
+const pendingStart = "0-0"
 
 // Publish, v'yi JSON olarak akışa ekler.
 func Publish(ctx context.Context, rdb *redis.Client, streamName string, v any) (string, error) {
@@ -115,15 +118,32 @@ func (c *Consumer) Run(ctx context.Context, h Handler) error {
 	if err := c.drainOwnPending(ctx, work, h); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
-	lastClaim := time.Now()
+	claimCursor := pendingStart
+	var nextClaim time.Time
 	for ctx.Err() == nil {
-		if time.Since(lastClaim) > c.ClaimIdle {
-			c.claimStale(ctx, work, h)
-			lastClaim = time.Now()
+		block := c.Block
+		if !time.Now().Before(nextClaim) {
+			next, err := c.claimStale(ctx, work, claimCursor, h)
+			if ctx.Err() != nil {
+				return nil
+			}
+			switch {
+			case err != nil:
+				slog.Warn("bekleyen Redis mesajları devralınamadı", "stream", c.Stream, "group", c.Group, "err", err)
+				nextClaim = time.Now().Add(c.ClaimIdle)
+			case next == pendingStart:
+				claimCursor = pendingStart
+				nextClaim = time.Now().Add(c.ClaimIdle)
+			default:
+				claimCursor = next
+				// Sonraki devralma sayfasından önce yeni mesajlara da sıra ver.
+				// Negatif Block, Redis komutuna BLOCK seçeneğini eklemez.
+				block = -1
+			}
 		}
 		res, err := c.RDB.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group: c.Group, Consumer: c.Name, Streams: []string{c.Stream, ">"},
-			Count: c.Batch, Block: c.Block,
+			Count: c.Batch, Block: block,
 		}).Result()
 		if errors.Is(err, redis.Nil) {
 			continue
@@ -143,34 +163,51 @@ func (c *Consumer) Run(ctx context.Context, h Handler) error {
 }
 
 func (c *Consumer) drainOwnPending(ctx, work context.Context, h Handler) error {
-	res, err := c.RDB.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group: c.Group, Consumer: c.Name, Streams: []string{c.Stream, "0"}, Count: 1000,
-	}).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return err
-	}
-	for _, s := range res {
-		c.handleAll(work, s.Messages, h)
+	cursor := pendingStart
+	for ctx.Err() == nil {
+		res, err := c.RDB.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group: c.Group, Consumer: c.Name, Streams: []string{c.Stream, cursor}, Count: c.Batch, Block: -1,
+		}).Result()
+		if errors.Is(err, redis.Nil) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read own pending: %w", err)
+		}
+		if len(res) == 0 || len(res[0].Messages) == 0 {
+			return nil
+		}
+		messages := res[0].Messages
+		c.handleAll(work, messages, h)
+		// Hata alan bir mesaj bu taramayı tutmasın; daha sonra devralınır.
+		cursor = messages[len(messages)-1].ID
 	}
 	return nil
 }
 
-func (c *Consumer) claimStale(ctx, work context.Context, h Handler) {
-	msgs, _, err := c.RDB.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+func (c *Consumer) claimStale(ctx, work context.Context, cursor string, h Handler) (string, error) {
+	msgs, next, err := c.RDB.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 		Stream: c.Stream, Group: c.Group, Consumer: c.Name,
-		MinIdle: c.ClaimIdle, Start: "0", Count: c.Batch,
+		MinIdle: c.ClaimIdle, Start: cursor, Count: c.Batch,
 	}).Result()
-	if err == nil {
-		c.handleAll(work, msgs, h)
+	if err != nil {
+		return cursor, err
 	}
+	c.handleAll(work, msgs, h)
+	return next, nil
 }
 
 func (c *Consumer) handleAll(ctx context.Context, msgs []redis.XMessage, h Handler) {
 	for _, xm := range msgs {
 		data, _ := xm.Values["data"].(string)
-		if err := h(ctx, Message{ID: xm.ID, Data: []byte(data)}); err != nil {
+		if xm.Values == nil {
+			// XREADGROUP geçmişinde, gövdesi budanmış bir mesajın kimliği kalabilir.
+			slog.Warn("bekleyen Redis mesajının gövdesi silinmiş", "stream", c.Stream, "group", c.Group, "msg_id", xm.ID)
+		} else if err := h(ctx, Message{ID: xm.ID, Data: []byte(data)}); err != nil {
 			continue // ACK yok -> sonra yeniden denenecek
 		}
-		c.RDB.XAck(ctx, c.Stream, c.Group, xm.ID)
+		if err := c.RDB.XAck(ctx, c.Stream, c.Group, xm.ID).Err(); err != nil {
+			slog.Warn("Redis mesajı onaylanamadı", "stream", c.Stream, "group", c.Group, "msg_id", xm.ID, "err", err)
+		}
 	}
 }
