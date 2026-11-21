@@ -68,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/events", timeout(s.listEvents))
 	mux.Handle("GET /api/events/{id}", timeout(s.eventDetail))
+	mux.Handle("GET /deprem/{id}", timeout(s.eventPage))
 	mux.Handle("GET /api/sources", timeout(s.sourceStatuses))
 	mux.Handle("GET /api/config", timeout(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"telegram_bot": s.TelegramBot})

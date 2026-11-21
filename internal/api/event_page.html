@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{.Title}} · Artçı</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="event-home" href="/">Artçı haritasına dön</a>
+  </header>
+  <div class="notice" role="note">
+    <strong>Artçı bir eğitim projesidir; resmî bir uyarı sistemi değildir.</strong>
+    Resmî bilgi için <a href="https://deprem.afad.gov.tr/">AFAD</a>'ı takip edin.
+  </div>
+  <main class="event-page">
+    <h1>{{.Title}}</h1>
+    {{if .Event}}{{with .Event}}
+    <p class="muted"><time datetime="{{.OriginTime.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{turkeyTime .OriginTime}}</time> · Türkiye saati</p>
+    <dl>
+      <dt>Büyüklük</dt><dd>{{decimal .Magnitude}}{{if .MagType}} ({{.MagType}}){{end}}</dd>
+      <dt>Derinlik</dt><dd>{{if .DepthKm}}{{decimal .DepthKm}} km{{else}}Bilinmiyor{{end}}</dd>
+    </dl>
+    {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+    {{if .Reports}}
+    <h2>Kaynak raporları</h2>
+    <ul>
+      {{range .Reports}}<li>{{sourceName .Source}} · {{decimal .Magnitude}}{{if .MagType}} ({{.MagType}}){{end}}</li>{{end}}
+    </ul>
+    {{end}}
+    {{end}}{{else}}
+    <p>{{.Message}}</p>
+    {{end}}
+  </main>
+</body>
+</html>
