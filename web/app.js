@@ -90,6 +90,7 @@
   const hoursEl = $('f-hours');
   const magnitudeEl = $('f-mag');
   const sortEl = $('f-sort');
+  const shareFeedback = $('share-feedback');
   const statusEl = $('status');
   const statusText = $('status-text');
 
@@ -123,7 +124,10 @@
       else url.searchParams.delete(key);
     }
     // Her filtre değişimi için tarayıcı geçmişine ayrı kayıt ekleme.
-    if (url.href !== location.href) history.replaceState(history.state, '', url);
+    if (url.href !== location.href) {
+      history.replaceState(history.state, '', url);
+      shareFeedback.textContent = '';
+    }
     return url.href;
   }
 
@@ -422,6 +426,16 @@
     syncFilterURL();
   });
   const refilter = () => quietly(() => { for (const e of entries.values()) applyVisibility(e); });
+
+  $('copy-link').addEventListener('click', async () => {
+    const url = syncFilterURL();
+    try {
+      await navigator.clipboard.writeText(url);
+      if (location.href === url) shareFeedback.textContent = 'Bağlantı kopyalandı.';
+    } catch {
+      shareFeedback.textContent = 'Bağlantıyı adres çubuğundan kopyalayabilirsiniz.';
+    }
+  });
 
   onSelect(magnitudeEl, (v) => { minMag = Number(v); refilter(); });
   onSelect(sortEl, (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });

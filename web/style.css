@@ -170,11 +170,19 @@ button { font: inherit; color: inherit; }
 .tg:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .tg[hidden] { display: none; }
 
+.summary-row { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
 .summary-line {
   margin: 0; font-size: .85rem; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .summary-line #count { color: var(--text); font-weight: 600; }
+.copy-link {
+  flex: none; padding: 0; border: 0; font-size: .82rem;
+  background: transparent; color: var(--accent); text-decoration: underline;
+  text-underline-offset: 2px; cursor: pointer;
+}
+.share-feedback { margin: 0; color: var(--muted); font-size: .82rem; }
+.share-feedback:empty { position: absolute; }
 .biggest {
   padding: 0; border: 0; background: none; cursor: pointer;
   color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
