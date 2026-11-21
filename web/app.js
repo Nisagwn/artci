@@ -226,6 +226,9 @@
     a.rel = 'noopener';
     official.append(a);
     root.append(official);
+    const eventLink = el('a', 'event-link', 'Deprem ayrıntısını aç');
+    eventLink.href = '/deprem/' + encodeURIComponent(ev.id);
+    root.append(eventLink);
     return root;
   }
 
