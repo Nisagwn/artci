@@ -22,8 +22,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U artci"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       ARTCI_TEST_POSTGRES_DSN: postgres://artci:artci@localhost:5432/artci?sslmode=disable
+      ARTCI_TEST_REDIS_ADDR: localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -48,7 +55,7 @@ jobs:
       - name: red-team (LLM doğrulayıcısı, kayıtlı yanıtlar)
         run: go test ./internal/summary -run 'RedTeam|TemplateAlwaysValid' -count=1 -v
 
-      - name: test (birim + PostGIS entegrasyon, -race)
+      - name: test (birim + PostGIS ve Redis entegrasyon, -race)
         run: go test ./... -race -count=1
 
       - name: build

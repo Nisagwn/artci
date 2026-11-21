@@ -129,6 +129,7 @@ sequenceDiagram
     R->>M: XREADGROUP merger
     M->>DB: BEGIN · upsert reports · aday yok → events INSERT (v1) · COMMIT
     M->>E: XADD event v1
+    M->>DB: published_version = 1
     M->>R: XACK
     E->>N: her grup kendi kopyasını alır
     N-->>N: bildirim gönderilir · harita güncellenir
@@ -137,6 +138,7 @@ sequenceDiagram
     R->>M: XREADGROUP merger
     M->>DB: BEGIN · upsert · aday: v1 olayı, puan ≈ 0,90 → bağla<br/>gösterilen değerler AFAD'a geçer → v2 · COMMIT
     M->>E: XADD event v2
+    M->>DB: published_version = 2
     M->>R: XACK
     E->>N: aynı olay, yeni sürüm
     N-->>N: büyüklük farkı 0,2 < 0,5 → ikinci bildirim yok · harita ve özet güncellenir
@@ -149,19 +151,20 @@ sequenceDiagram
    eder. Rapor yeniyse ±10 sn ve 50 km içindeki olaylar arasından en iyi
    puanlıyı arar; bağlar ya da yeni olay açar. Olayın gösterilen değerleri
    kaynak önceliğine göre yeniden hesaplanır, değiştiyse `version` artar.
-3. **Yayın.** Değişen olay `events.updated` akışına yazılır. DB commit'i ile
-   yayın arasında çökme olursa `events.published_version` eksik yayını
-   sonradan tamamlar (küçük bir outbox).
-4. **Tüketim.** Her tüketici kendi consumer group'uyla akışın tamamını alır:
-   `notifier` bildirir, `summarizer` özet yazar, `api` haritadaki istemcilere iter.
+3. **Yayın.** Postgres işlemi tamamlandıktan sonra `merger`, değişen olayın
+   sürümünü `events.updated` akışına yazar ve ardından `published_version`
+   değerini ilerletir. Gelen raporun ACK'i bu adımlardan sonra gönderilir.
+4. **Tüketim.** `notifier` ve `summarizer` aynı akışı ayrı gruplarda okur. Her
+   API örneğinin grubu ayrıdır; geçmiş olayları REST sunar, yeni güncellemeleri
+   WebSocket bağlı istemcilere iletir.
 
 ### Akışlar
 
 | Akış | Yazan | Tüketici grupları | Teslim |
 |---|---|---|---|
-| `reports.raw` | `ingest`, `replay` | `merger` | at-least-once; tekrar gelen mesaj upsert'te no-op olur |
+| `reports.raw` | `ingest`, `replay` | `merger` | Saklanan raporlar yeniden teslim edilebilir; aynı içerik upsert'te no-op olur |
 | `reports.dlq` | `ingest` | — (inceleme için) | ayrıştırılamayan ham kayıt + neden |
-| `events.updated` | `merger` | `notifier`, `summarizer`, `api-<host>` | at-least-once; tüketiciler `(event_id, version)` ile idempotent |
+| `events.updated` | `merger` | `notifier`, `summarizer`, `api-<host>` | Saklanan güncellemeler yeniden teslim edilebilir; her tüketici tekrarları kendi işleminde ele alır |
 
 Akışlar `MAXLEN ≈ 100 000` ile sınırlıdır. Çöken bir tüketicinin onaylamadığı
 mesajlar açılışta bekleyenler listesinden yeniden işlenir. `api` grubu `$`'dan
@@ -337,19 +340,53 @@ kullanılır. Veri kümesi, kurumların yayımladığı deprem parametreleriyle
 | Kaynak geçici yanıt vermiyor | Exponential backoff + full jitter |
 | Kaynak uzun süre çökük | Kaynak başına circuit breaker; diğerleri ayrı süreç, etkilenmez |
 | Bozuk kayıt | `reports.dlq`; hat durmaz; aynı bozuk kayıt tekrar tekrar yazılmaz |
-| Servis işi alıp çöker | Consumer group: onaylanmamış mesaj yeniden işlenir |
+| Servis işi alıp çöker | Aynı tüketici açılışta kendi bekleyenlerini okur; süresi dolan girdiler `XAUTOCLAIM` ile devralınır |
+| ACK gönderilemez | Akış, grup ve mesaj kimliği loglanır; Redis'te bekleyen mesaj bir sonraki taramada yeniden işlenebilir |
 | Aynı mesaj tekrar gelir | `UNIQUE (source, source_event_id)` + upsert'in no-op'u |
 | DB commit oldu, yayın olmadı | `events.published_version` (küçük bir outbox) |
 | EMSC WebSocket kopar | Yeniden bağlanma + kopma anından itibaren FDSN ile boşluk doldurma; ping ile ölü bağlantı tespiti |
-| Servis kapatılıyor | Graceful shutdown: yeni iş alma, eldekini bitir, ACK'le, çık |
+| Servis kapatılıyor | Yeni okuma durur; eldeki grup tamamlanır ve başarılı işlemler onaylanır |
+
+### Kesinti sonrası toparlanma
+
+```mermaid
+sequenceDiagram
+    participant R as Redis reports.raw
+    participant M as merger
+    participant DB as PostgreSQL
+    participant E as Redis events.updated
+    R->>M: Raporu teslim et ve bekleyenler listesine ekle
+    M->>DB: Raporu kaydet ve olay sürümünü commit et
+    Note over M: Yayından önce kesinti
+    M->>DB: Açılışta published_version < version olan olayları oku
+    M->>E: Güncel olay sürümünü yayımla
+    M->>DB: published_version değerini ilerlet
+    M->>R: Bekleyen raporu yeniden al
+    M->>DB: Aynı içerik olduğundan upsert değişiklik üretmez
+    M->>R: XACK ile raporu bekleyenler listesinden çıkar
+```
+
+Tüketici açılışta kendi bekleyen kayıtlarını sayfa sayfa okur. Çalışma sırasında
+Redis'in `XAUTOCLAIM` imlecini izler; boş bir sayfadan sonra imleç `0-0` olana
+kadar taramaya devam eder. Devralma sayfaları arasında yeni kayıtlar da okunur.
+İşleyici hata döndürürse ACK gönderilmez; geçici hata alan iş sonraki uygun
+taramada yeniden denenir.
+
+`merger`, açılışta ve rapor işleminden sonra `published_version < version`
+olan olayları yayımlar. Redis yayını başarılı olup sürüm işareti yazılamazsa
+aynı güncelleme yeniden yayımlanabilir.
 
 ### Neden exactly-once değil?
 
-Sistem, Redis Streams üzerinde **at-least-once teslim ve idempotent işlem**
-modelini kullanır. Tüketici işlemi tamamlayıp ACK göndermeden kapanırsa mesaj
-yeniden teslim edilebilir. Yinelenen raporlar `UNIQUE` kısıtı ve upsert ile
-etkisiz hâle getirilir; aynı bildirim türünün tekrar kaydedilmesi
-`notifications` tablosunun birincil anahtarıyla engellenir.
+Redis'te gövdesi duran mesajlar için **at-least-once**, yeniden teslimi mümkün
+kılar. Her akış yaklaşık 100.000 kayıtla sınırlandırılır. Uzun bir kesintide
+Redis eski bir kaydı tüketici onaylamadan budayabilir. Bekleyenler listesindeki
+kimlik, silinmiş mesaj gövdesini geri getiremez.
+
+Yinelenen raporlar `UNIQUE (source, source_event_id)` ve upsert ile etkisiz
+hâle getirilir. Özetler olay sürümüne göre değerlendirilir, harita aynı olayın
+daha eski güncellemelerini atar. `notifications` tablosunun birincil anahtarı
+aynı abone, olay ve bildirim türünün tekrar kaydedilmesini engeller.
 Ancak kayıt ile gönderim arasında süreç çökerse bildirim kaybolabilir;
 Telegram gönderimiyle veritabanı kaydı tek transaction değildir. Bu nedenle
 uçtan uca “tam olarak bir kez” garantisi yoktur. Ayrıntı:
@@ -463,8 +500,11 @@ ARTCI_SWEEP=1 go test ./internal/merger -run SweepReal -v       # eşik taramas�
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): gofmt, vet,
-`go mod tidy` denetimi, red-team, PostGIS servisli `go test -race`, derleme,
-Docker imajı.
+`go mod tidy` denetimi, red-team, PostGIS ve Redis 7 servisleriyle
+`go test -race`, derleme ve Docker imajı. `make dev-up` sonrasında yerelde
+Redis testlerini çalıştırmak için `ARTCI_TEST_REDIS_ADDR=localhost:6379`
+değişkenini ayarlayın. Yeniden teslimin tek bir Postgres olayı ürettiğini
+doğrulayan test ayrıca `ARTCI_TEST_POSTGRES_DSN` kullanır.
 
 ### Canlıya alma
 
