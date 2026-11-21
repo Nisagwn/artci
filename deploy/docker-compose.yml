@@ -91,6 +91,7 @@ services:
     environment:
       <<: *env
       ARTCI_TELEGRAM_BOT: ${ARTCI_TELEGRAM_BOT:-}
+      ARTCI_PROMETHEUS_URL: http://prometheus:9090
 
   caddy:
     image: caddy:2-alpine

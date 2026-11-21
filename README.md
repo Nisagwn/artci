@@ -19,6 +19,7 @@ Go · PostgreSQL + PostGIS · Redis Streams · Prometheus + Grafana · Docker Co
 - **Yer arama:** il veya yer adına göre listeyi ve haritayı süzer; eşleşen sonuçlara haritada yaklaşır. `/` aramaya geçer, `Esc` aramayı temizler.
 - **Filtreler:** son 1 saat, 24 saat veya 7 gün; her büyüklük ya da 2, 3, 4 ve üstü. Liste en yeni veya en büyük depreme göre sıralanır. Seçilen aralıkta API'den en fazla 2000 olay yüklenir.
 - **Canlı görünüm:** harita ve liste WebSocket ile güncellenir; bağlantı koparsa yeniden bağlanır. Saatler Türkiye saatidir; açık/koyu görünüm sistem tercihini izler.
+- **Kaynak durumu:** AFAD, Kandilli ve EMSC için son başarılı erişim gösterilir. 15 dakikadır başarılı erişim yoksa kaynak gecikmiş görünür. Prometheus erişilemiyorsa veya ilgili ölçüm bulunamıyorsa durum bilinmiyor olarak gösterilir.
 - **Telegram bağlantısı:** bot kullanıcı adı ayarlıysa “Telegram'da bildirim al” bağlantısı görünür. Aramaya tanınan bir il adı yazıp bağlantıyı açarak Telegram'da botu başlatmak, o il için varsayılan aboneliği oluşturur. İl tanınmazsa bot karşılama mesajını gösterir.
 
 ### Telegram abonelikleri
@@ -442,6 +443,9 @@ make run-api
 ```
 
 Harita [http://localhost:8080](http://localhost:8080) adresinde açılır.
+Yerel API'ye kaynak durumu sağlamak için `ARTCI_PROMETHEUS_URL` değişkenine yerel
+toplayıcıları izleyen Prometheus'un adresini verin. Tam Compose kurulumu bu
+adresi API'ye otomatik verir.
 Telegram token'ı verilmediyse bildirici yalnızca log üretir; LLM anahtarı
 verilmediyse özetleyici şablon kullanır. İsteğe bağlı ayarları servisleri
 başlatmadan önce ortam değişkeni olarak tanımlayın. `deploy/.env` dosyası

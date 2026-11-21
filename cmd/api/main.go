@@ -42,7 +42,8 @@ func main() {
 		Addr: addr,
 		Handler: (&api.Server{
 			Store: st, Static: web.FS, WS: hub,
-			TelegramBot: strings.TrimPrefix(app.Env("ARTCI_TELEGRAM_BOT", ""), "@"),
+			TelegramBot:   strings.TrimPrefix(app.Env("ARTCI_TELEGRAM_BOT", ""), "@"),
+			PrometheusURL: app.Env("ARTCI_PROMETHEUS_URL", ""),
 		}).Handler(),
 		// Sunucu genelinde Read/WriteTimeout yok: uzun ömürlü WebSocket
 		// bağlantılarını keserdi. Normal istekler TimeoutHandler ile sınırlı.

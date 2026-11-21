@@ -100,6 +100,17 @@ button { font: inherit; color: inherit; }
 .notice strong { font-weight: 600; }
 .notice a { color: inherit; font-weight: 600; }
 
+.source-status {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem 1rem;
+  padding: .4rem 1.1rem; background: var(--surface);
+  border-bottom: 1px solid var(--border); font-size: .82rem;
+}
+.source-status h2 { margin: 0; font-size: inherit; }
+.source-status ul { display: flex; flex-wrap: wrap; gap: .2rem 1rem; margin: 0; padding: 0; list-style: none; }
+.source-status li { display: flex; align-items: baseline; gap: .35rem; }
+.source-status li span { color: var(--muted); }
+.source-status li[data-state="stale"] span { color: var(--warn); font-weight: 600; }
+
 /* ---- Düzen ---- */
 .layout {
   flex: 1;
