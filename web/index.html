@@ -75,9 +75,13 @@
 
         <a class="tg" id="tg" href="#" target="_blank" rel="noopener" hidden>🔔 <span id="tg-text">Telegram'da bildirim al</span></a>
 
-        <p class="summary-line" aria-live="off">
-          <span id="count">0</span> deprem<span id="biggest-wrap" hidden> · en büyüğü <button type="button" class="biggest" id="biggest"></button></span>
-        </p>
+        <div class="summary-row">
+          <p class="summary-line" aria-live="off">
+            <span id="count">0</span> deprem<span id="biggest-wrap" hidden> · en büyüğü <button type="button" class="biggest" id="biggest"></button></span>
+          </p>
+          <button type="button" class="copy-link" id="copy-link">Bağlantıyı kopyala</button>
+        </div>
+        <p class="share-feedback" id="share-feedback" role="status"></p>
       </div>
 
       <ul id="list" class="list" tabindex="-1" aria-live="polite" aria-relevant="additions"></ul>
