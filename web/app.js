@@ -87,16 +87,45 @@
   const biggestEl = $('biggest');
   const biggestWrap = $('biggest-wrap');
   const searchEl = $('search');
+  const hoursEl = $('f-hours');
+  const magnitudeEl = $('f-mag');
+  const sortEl = $('f-sort');
   const statusEl = $('status');
   const statusText = $('status-text');
 
+  const filterParams = new URLSearchParams(location.search);
+  const selectFromURL = (select, key, fallback) => {
+    const value = filterParams.get(key);
+    select.value = [...select.options].some((option) => option.value === value) ? value : fallback;
+    return select.value;
+  };
+  searchEl.value = filterParams.get('q') ?? '';
+
   // id -> { ev, marker, li, detail, key }
   const entries = new Map();
-  let minMag = 0;
-  let windowHours = 24;
-  let sortBy = 'time';
-  let query = '';
+  let minMag = Number(selectFromURL(magnitudeEl, 'min_mag', '0'));
+  let windowHours = Number(selectFromURL(hoursEl, 'hours', '24'));
+  let sortBy = selectFromURL(sortEl, 'sort', 'time');
+  let query = fold(searchEl.value.trim());
+  let zoomFromLink = Boolean(query);
   const windowMs = () => windowHours * 3600 * 1000;
+
+  function syncFilterURL() {
+    const url = new URL(location.href);
+    const filters = {
+      q: searchEl.value.trim(),
+      hours: windowHours === 24 ? '' : String(windowHours),
+      min_mag: minMag === 0 ? '' : String(minMag),
+      sort: sortBy === 'time' ? '' : sortBy,
+    };
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
+    // Her filtre değişimi için tarayıcı geçmişine ayrı kayıt ekleme.
+    if (url.href !== location.href) history.replaceState(history.state, '', url);
+    return url.href;
+  }
 
   // ---- Harita ----
   const map = L.map('map', { center: [39.0, 35.2], zoom: 6, minZoom: 4, worldCopyJump: true });
@@ -388,13 +417,16 @@
   }
   setInterval(() => { prune(); refreshTimes(); }, 60 * 1000);
 
-  const onSelect = (id, fn) => $(id).addEventListener('change', (e) => fn(e.target.value));
+  const onSelect = (select, fn) => select.addEventListener('change', () => {
+    fn(select.value);
+    syncFilterURL();
+  });
   const refilter = () => quietly(() => { for (const e of entries.values()) applyVisibility(e); });
 
-  onSelect('f-mag', (v) => { minMag = Number(v) || 0; refilter(); });
-  onSelect('f-sort', (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });
-  onSelect('f-hours', (v) => {
-    windowHours = Number(v) || 24;
+  onSelect(magnitudeEl, (v) => { minMag = Number(v); refilter(); });
+  onSelect(sortEl, (v) => { sortBy = v; sortAll(); listEl.scrollTop = 0; });
+  onSelect(hoursEl, (v) => {
+    windowHours = Number(v);
     prune();
     loadRecent().catch(() => setStatus('degraded', 'Liste yüklenemedi'));
   });
@@ -403,6 +435,8 @@
   let searchTimer = null;
   function runSearch() {
     query = fold(searchEl.value.trim());
+    zoomFromLink = false;
+    syncFilterURL();
     updateTelegram();
     quietly(() => {
       for (const e of entries.values()) {
@@ -410,6 +444,9 @@
         fillItem(e.li, e.ev);
       }
     });
+    zoomToSearchResults();
+  }
+  function zoomToSearchResults() {
     if (!query) return;
     const pts = [];
     for (const e of entries.values()) if (visibleEntry(e)) pts.push([e.ev.lat, e.ev.lon]);
@@ -449,6 +486,10 @@
     // Bu arada başka bir zaman aralığı seçildiyse eski yanıtı atla.
     if (hours !== windowHours) return;
     quietly(() => { for (const ev of body.events) upsert(ev, false); });
+    if (zoomFromLink) {
+      zoomFromLink = false;
+      zoomToSearchResults();
+    }
   }
 
   // ---- WebSocket ----
