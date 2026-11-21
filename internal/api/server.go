@@ -48,6 +48,8 @@ type Server struct {
 	// TelegramBot: bildirim botunun kullanıcı adı (@ olmadan). Doluysa site
 	// "Telegram'da bildirim al" bağlantısını gösterir.
 	TelegramBot string
+	// PrometheusURL, kaynak durumunu okumak için dahili Prometheus adresidir.
+	PrometheusURL string
 }
 
 // Handler, tüm yönlendirmeleri ve ortak ara katmanları kurar.
@@ -66,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/events", timeout(s.listEvents))
 	mux.Handle("GET /api/events/{id}", timeout(s.eventDetail))
+	mux.Handle("GET /api/sources", timeout(s.sourceStatuses))
 	mux.Handle("GET /api/config", timeout(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"telegram_bot": s.TelegramBot})
 	}))
