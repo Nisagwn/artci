@@ -239,6 +239,21 @@ button { font: inherit; color: inherit; }
 .pop .summary { margin: .5rem 0; }
 .pop .summary.pending { color: var(--muted); font-style: italic; }
 .pop .src { margin: .3rem 0 0; font-size: .88rem; color: var(--muted); }
+.event-link { display: inline-block; margin-top: .45rem; font-weight: 600; }
+
+/* Paylaşılan deprem ayrıntısı */
+.event-home { font-weight: 600; }
+.event-page {
+  width: min(100% - 2rem, 40rem); margin: clamp(1rem, 4vw, 3rem) auto;
+  padding: clamp(1rem, 4vw, 2rem); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); overflow-wrap: anywhere;
+}
+.event-page h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; }
+.event-page h2 { margin: 1.25rem 0 .35rem; font-size: 1.05rem; }
+.event-page dl { display: grid; grid-template-columns: auto 1fr; gap: .3rem 1rem; }
+.event-page dt { color: var(--muted); }
+.event-page dd { margin: 0; font-weight: 600; }
+.event-page ul { margin: 0; padding-left: 1.25rem; }
 
 /* Haritada yeni olay vurgusu: tek seferlik genişleyen halka. */
 .ring { animation: ring 2.5s ease-out 1 forwards; transform-origin: center; transform-box: fill-box; }
