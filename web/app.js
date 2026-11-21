@@ -521,5 +521,33 @@
     .catch(() => {});
 
   updateCount();
+  const sourceRows = $('source-status').querySelectorAll('[data-source]');
+
+  async function refreshSources() {
+    let sources = [];
+    try {
+      const response = await fetch('/api/sources', { signal: AbortSignal.timeout(5000) });
+      if (response.ok) {
+        const payload = await response.json();
+        if (Array.isArray(payload.sources)) sources = payload.sources;
+      }
+    } catch {
+      // İzleme geçici olarak kullanılamıyorsa eski durum canlı gösterilmez.
+    }
+    for (const row of sourceRows) {
+      const source = sources.find((item) => item.source === row.dataset.source);
+      const last = Date.parse(source?.last_success);
+      const state = Number.isFinite(last) && (source.status === 'recent' || source.status === 'stale')
+        ? source.status : 'unknown';
+      const text = state === 'unknown' ? 'Durum bilinmiyor' :
+        (state === 'stale' ? 'Erişim gecikti' : 'Son erişim') + ' · ' + fmtShort.format(last);
+      const label = row.querySelector('span');
+      row.dataset.state = state;
+      if (label.textContent !== text) label.textContent = text;
+    }
+    setTimeout(refreshSources, 30_000);
+  }
+
+  refreshSources();
   connect();
 })();

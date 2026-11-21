@@ -13,7 +13,8 @@ import (
 	"github.com/nisaguven/artci/internal/normalize"
 )
 
-const sourceStatusQuery = `max by (source) (artci_source_last_success_timestamp_seconds{job="artci",source=~"afad|kandilli|emsc"})`
+// Toplayıcı durmuşsa da son başarılı erişimi bir saatlik metrik geçmişinden oku.
+const sourceStatusQuery = `max by (source) (last_over_time(artci_source_last_success_timestamp_seconds{job="artci",source=~"afad|kandilli|emsc"}[1h]))`
 
 const sourceStaleAfter = 15 * time.Minute
 
