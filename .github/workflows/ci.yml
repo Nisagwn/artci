@@ -69,3 +69,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: docker build
         run: docker build -t artci:ci .
+
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: age kurulumu
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y age
+      - name: PostGIS yedeğini ayrı örneğe geri yükle
+        run: bash testdata/backup/roundtrip.sh
